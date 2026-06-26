@@ -37,10 +37,17 @@ def request_target(world, villagers, selected, mx, my):
         return None
     if best.kind == "food":
         return "hunger", {"type": "eat", "need": "hunger", "target": best.center, "t": 0.0}
+    if best.kind == "water":
+        return "thirst", {"type": "drink", "need": "thirst", "target": best.center, "t": 0.0}
     if best.kind == "home":
         return "energy", {"type": "sleep", "need": "energy", "target": best.center, "t": 0.0}
     if best.kind == "fun":
         return "fun", {"type": "play", "need": "fun", "target": best.center, "t": 0.0}
+    # work tasks — no personal need is met, so willingness leans on how much
+    # they like you (need is None => zero "wanted it anyway" urge)
+    work = {"tree": "chop", "rock": "mine", "plot": "farm", "bench": "craft"}.get(best.kind)
+    if work:
+        return None, {"type": work, "target": best.center, "obj": best, "t": 0.0, "work": 0.0}
     return None
 
 
@@ -96,6 +103,7 @@ def run(selftest=False):
 
         # --- update ---
         game_seconds += gdt
+        world.update(gdt)
         for v in villagers:
             v.update(gdt, world, villagers)
 
@@ -117,7 +125,7 @@ def run(selftest=False):
             screen.blit(tint, (0, S.TOPBAR))
         from ui import draw_topbar, draw_panel
         draw_topbar(screen, font, day, hh, mm, speed, paused)
-        draw_panel(screen, font, big, selected, villagers)
+        draw_panel(screen, font, big, selected, villagers, world)
         pygame.display.flip()
 
         if selftest:

@@ -15,6 +15,10 @@ class Obj:
         self.tx, self.ty = tx, ty
         self.center = (tx * S.TILE + S.TILE / 2, ty * S.TILE + S.TILE / 2)
         self.owner = None         # for homes: which villager lives here
+        self.amount = 0           # remaining gathers (trees/rocks)
+        self.state = None         # plot state: untilled/tilled/seeded/ripe
+        self.growth = 0.0         # crop growth timer
+        self.regrow = 0.0         # node regrow timer
 
 
 class World:
@@ -23,6 +27,7 @@ class World:
         # tile grid: 0 grass, 1 grass-variant, 2 water, 3 tree
         self.tiles = [[0 for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
         self.objects = []
+        self.stock = {k: 0 for k in S.STOCK_KINDS}  # settlement stockpile
         self._build()
 
     # -- generation ----------------------------------------------------
@@ -41,6 +46,10 @@ class World:
         # fun spot: a shrine beside the pond
         self.objects.append(Obj("fun", 24, 18))
 
+        # water: drinking spots at the pond's edge
+        self.objects.append(Obj("water", 25, 18))
+        self.objects.append(Obj("water", 32, 18))
+
         # food: berry bushes scattered around
         for (tx, ty) in [(6, 5), (15, 20), (29, 6), (10, 13), (20, 9)]:
             self.objects.append(Obj("food", tx, ty))
@@ -48,6 +57,23 @@ class World:
         # homes: three huts in different corners
         self.homes = [Obj("home", 4, 3), Obj("home", 30, 21), Obj("home", 4, 21)]
         self.objects.extend(self.homes)
+
+        # gatherable + workable objects (v0.3)
+        self.trees = [Obj("tree", *p) for p in [(12, 4), (8, 9), (20, 4), (14, 15)]]
+        self.rocks = [Obj("rock", *p) for p in [(28, 10), (31, 13), (26, 8)]]
+        for o in self.trees + self.rocks:
+            o.amount = S.NODE_AMOUNT
+        self.plots = []
+        for py in (7, 8):
+            for px in (6, 7, 8):
+                plot = Obj("plot", px, py)
+                plot.state = "untilled"
+                self.plots.append(plot)
+        self.bench = Obj("bench", 16, 11)
+        workables = self.trees + self.rocks + self.plots + [self.bench]
+        self.objects.extend(workables)
+        for o in workables:                       # clear ground under them
+            self.tiles[o.ty][o.tx] = 0
 
         # decorative trees, avoiding water and objects
         blocked = {(o.tx, o.ty) for o in self.objects}
@@ -68,6 +94,56 @@ class World:
             if d < bd:
                 best, bd = o, d
         return best
+
+    # -- simulation ----------------------------------------------------
+    def update(self, gdt):
+        for o in self.objects:
+            if o.kind in ("tree", "rock") and o.amount <= 0 and o.regrow > 0:
+                o.regrow -= gdt
+                if o.regrow <= 0:
+                    o.amount = S.NODE_AMOUNT
+            elif o.kind == "plot" and o.state == "seeded":
+                o.growth += gdt
+                if o.growth >= S.CROP_GROW:
+                    o.state = "ripe"
+
+    # -- work outcomes (called by a villager finishing a task) ---------
+    def gather(self, obj, kind):
+        if obj is None or obj.amount <= 0:
+            return ("nothing left", S.C_DIM)
+        obj.amount -= 1
+        if obj.amount <= 0:
+            obj.regrow = S.NODE_REGROW
+        amt = S.YIELD_WOOD if kind == "wood" else S.YIELD_STONE
+        self.stock[kind] += amt
+        return (f"+{amt} {kind}", S.C_GOLD)
+
+    def tend_plot(self, obj):
+        if obj.state == "untilled":
+            obj.state = "tilled"
+            return ("tilled", S.C_GOOD)
+        if obj.state == "tilled":
+            obj.state = "seeded"
+            obj.growth = 0.0
+            return ("planted", S.C_GOOD)
+        if obj.state == "seeded":
+            return ("still growing", S.C_DIM)
+        if obj.state == "ripe":
+            obj.state = "tilled"
+            obj.growth = 0.0
+            self.stock["grain"] += S.YIELD_GRAIN
+            return (f"+{S.YIELD_GRAIN} grain", S.C_GOLD)
+        return (None, None)
+
+    def craft(self):
+        for name, ins, outs in S.RECIPES:
+            if all(self.stock[k] >= v for k, v in ins.items()):
+                for k, v in ins.items():
+                    self.stock[k] -= v
+                for k, v in outs.items():
+                    self.stock[k] += v
+                return (", ".join(f"+{v} {k}" for k, v in outs.items()), S.C_GOLD)
+        return ("need materials", S.C_BAD)
 
     # -- drawing -------------------------------------------------------
     def draw(self, surf):
@@ -102,3 +178,30 @@ class World:
                 pygame.draw.polygon(surf, S.C_SHRINE,
                                     [(cx, cy - 14), (cx - 11, cy + 8), (cx + 11, cy + 8)])
                 pygame.draw.circle(surf, (255, 255, 235), (int(cx), int(cy - 2)), 3)
+            elif o.kind == "tree":
+                if o.amount > 0:
+                    pygame.draw.rect(surf, S.C_TRUNK, (cx - 3, cy - 2, 6, 13))
+                    pygame.draw.circle(surf, S.C_TREE_R, (int(cx), int(cy - 9)), 12)
+                else:
+                    pygame.draw.rect(surf, S.C_TRUNK, (cx - 4, cy + 3, 8, 6))
+            elif o.kind == "rock":
+                if o.amount > 0:
+                    pygame.draw.circle(surf, S.C_ROCK, (int(cx), int(cy)), 10)
+                    pygame.draw.circle(surf, (92, 94, 102), (int(cx), int(cy)), 10, 1)
+                else:
+                    pygame.draw.circle(surf, (100, 102, 110), (int(cx), int(cy)), 5)
+            elif o.kind == "plot":
+                r = pygame.Rect(o.tx * S.TILE + 3, o.ty * S.TILE + S.TOPBAR + 3,
+                                S.TILE - 6, S.TILE - 6)
+                pygame.draw.rect(surf, S.C_PLOT if o.state == "untilled" else S.C_PLOT_T, r)
+                if o.state == "seeded":
+                    pygame.draw.circle(surf, S.C_SPROUT, r.center, 3)
+                elif o.state == "ripe":
+                    pygame.draw.rect(surf, S.C_CROP,
+                                     (r.centerx - 6, r.y + 2, 12, r.height - 4))
+            elif o.kind == "bench":
+                pygame.draw.rect(surf, S.C_BENCH, (cx - 12, cy - 6, 24, 12))
+                pygame.draw.rect(surf, (90, 72, 44), (cx - 12, cy - 6, 24, 12), 1)
+            elif o.kind == "water":
+                pygame.draw.circle(surf, (70, 120, 170), (int(cx), int(cy)), 8)
+                pygame.draw.circle(surf, (150, 200, 230), (int(cx), int(cy)), 4)

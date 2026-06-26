@@ -17,7 +17,7 @@ def draw_topbar(surf, font, day, hh, mm, speed, paused):
     surf.blit(font.render(clock, True, S.C_GOLD), (10, 4))
     s = font.render(spd, True, S.C_SELECT if paused else S.C_TEXT)
     surf.blit(s, (260, 4))
-    hint = "L-click: select  |  R-click: ask them to go there  |  Space: pause  |  +/-: speed  |  Esc: quit"
+    hint = "L-click select  ·  R-click assign (gather/farm/craft/move)  ·  Space pause  ·  +/- speed  ·  Esc quit"
     h = font.render(hint, True, S.C_DIM)
     surf.blit(h, (S.WIDTH - h.get_width() - 10, 4))
 
@@ -32,22 +32,36 @@ def _need_bar(surf, font, x, y, w, label, value):
     surf.blit(font.render(f"{int(value)}", True, S.C_TEXT), (x + w + 6, y + 6))
 
 
-def draw_panel(surf, font, big, selected, villagers):
+def _draw_stockpile(surf, font, world):
+    px = S.PLAY_W
+    sy = S.TOPBAR + S.PLAY_H - 52
+    pygame.draw.line(surf, S.C_BAR_BG, (px + 12, sy), (px + S.PANEL_W - 12, sy), 1)
+    surf.blit(font.render("SETTLEMENT", True, S.C_DIM), (px + 16, sy + 4))
+    l1 = "   ".join(f"{k}:{world.stock[k]}" for k in ("wood", "stone", "grain"))
+    l2 = "   ".join(f"{k}:{world.stock[k]}" for k in ("food", "tools"))
+    surf.blit(font.render(l1, True, S.C_GOLD), (px + 16, sy + 24))
+    surf.blit(font.render(l2, True, S.C_GOLD), (px + 16, sy + 42))
+
+
+def draw_panel(surf, font, big, selected, villagers, world):
     px = S.PLAY_W
     pygame.draw.rect(surf, S.C_PANEL, (px, S.TOPBAR, S.PANEL_W, S.PLAY_H))
+    _draw_stockpile(surf, font, world)
     x = px + 16
     y = S.TOPBAR + 16
 
     if selected is None:
         surf.blit(big.render("Hearthkin", True, S.C_GOLD), (x, y))
         surf.blit(font.render("v0.1 — the people", True, S.C_DIM), (x, y + 30))
-        msg = ["", "Click a villager to inspect",
-               "their needs, mood, traits,", "and relationships.",
-               "", "Select one, then right-click",
-               "a bush, hut, shrine, or another",
-               "villager to ask them to go there.",
-               "", "They may say no — it depends",
-               "on how much they like you."]
+        msg = ["", "Click a villager to inspect them.",
+               "", "Select one, then right-click to",
+               "assign work:",
+               "  trees -> wood    rocks -> stone",
+               "  field -> farming   bench -> craft",
+               "or a bush/hut/shrine/villager to",
+               "send them there.",
+               "", "They may say no — it depends on",
+               "how much they like you."]
         for i, line in enumerate(msg):
             surf.blit(font.render(line, True, S.C_TEXT), (x, y + 60 + i * 20))
         return

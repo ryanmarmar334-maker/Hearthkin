@@ -38,14 +38,14 @@ C_BAD     = (210, 90, 90)
 C_GOLD    = (240, 210, 130)
 
 # --- Needs -------------------------------------------------------------
-NEEDS = ["hunger", "energy", "social", "fun"]
-NEED_LABEL = {"hunger": "Food", "energy": "Energy",
+NEEDS = ["hunger", "thirst", "energy", "social", "fun"]
+NEED_LABEL = {"hunger": "Food", "thirst": "Water", "energy": "Energy",
               "social": "Social", "fun": "Fun"}
 
-# per game-second decay (need drains toward 0)
-DECAY = {"hunger": 2.2, "energy": 1.6, "social": 2.0, "fun": 1.8}
+# per game-second decay (need drains toward 0) — thirst builds faster than hunger
+DECAY = {"hunger": 2.2, "thirst": 2.6, "energy": 1.6, "social": 2.0, "fun": 1.8}
 # per game-second restore while performing the matching action
-RESTORE = {"hunger": 40, "energy": 34, "social": 30, "fun": 34}
+RESTORE = {"hunger": 40, "thirst": 45, "energy": 34, "social": 30, "fun": 34}
 
 SATED = 92        # a need this high counts as satisfied -> stop the action
 ACT_URGE = 45     # only chase a need once its "urge" (100-value) passes this
@@ -63,6 +63,33 @@ SPEEDS = [1, 2, 4]        # selectable game speeds
 
 # --- Player requests ---------------------------------------------------
 REQUEST_THRESHOLD = 35    # willingness must clear this for a villager to comply
+
+# --- Resources, gathering, farming, crafting (v0.3) -------------------
+STOCK_KINDS = ["wood", "stone", "grain", "food", "tools"]
+WORK_TYPES = {"chop", "mine", "farm", "craft"}
+
+WORK_TIME = 2.4           # game-seconds of effort per work action
+YIELD_WOOD = 2            # wood per chop
+YIELD_STONE = 2           # stone per mine
+YIELD_GRAIN = 3           # grain per harvest
+NODE_AMOUNT = 3           # chops/mines before a tree/rock is spent
+NODE_REGROW = 45.0        # game-seconds for a spent node to come back
+CROP_GROW = 30.0          # game-seconds for a planted crop to ripen
+
+# recipes tried in order at the workbench: (name, inputs, outputs)
+RECIPES = [
+    ("meal",  {"grain": 3}, {"food": 2}),
+    ("tools", {"wood": 2, "stone": 1}, {"tools": 1}),
+]
+
+# resource / station colors
+C_TREE_R  = (46, 92, 52)       # resource-tree canopy
+C_ROCK    = (132, 134, 142)
+C_PLOT    = (104, 74, 48)      # untilled soil
+C_PLOT_T  = (84, 58, 40)       # tilled soil
+C_SPROUT  = (120, 180, 90)
+C_CROP    = (212, 192, 92)
+C_BENCH   = (150, 120, 70)
 
 # --- Traits ------------------------------------------------------------
 # Each trait tweaks decay rates, social/relationship gains, or mood.

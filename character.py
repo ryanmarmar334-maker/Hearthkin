@@ -12,10 +12,15 @@ import settings as S
 
 ACTION_LABEL = {
     "eat": "eating berries",
+    "drink": "drinking",
     "sleep": "sleeping",
     "play": "at the shrine",
     "talk": "chatting",
     "wander": "wandering",
+    "chop": "chopping wood",
+    "mine": "mining stone",
+    "farm": "working the field",
+    "craft": "crafting",
 }
 
 
@@ -139,6 +144,10 @@ class Character:
             obj = world.nearest(self.pos, "food")
             self.action = {"type": "eat", "need": "hunger",
                            "target": obj.center, "t": 0.0}
+        elif need == "thirst":
+            obj = world.nearest(self.pos, "water")
+            self.action = {"type": "drink", "need": "thirst",
+                           "target": obj.center, "t": 0.0}
         elif need == "energy":
             self.action = {"type": "sleep", "need": "energy",
                            "target": self.home.center, "t": 0.0}
@@ -186,6 +195,15 @@ class Character:
                 self.action = None
             return
 
+        if a["type"] in S.WORK_TYPES:
+            self._move_to(a["target"], gdt)
+            if self._at(a["target"]):
+                a["work"] += gdt
+                if a["work"] >= S.WORK_TIME:
+                    self._finish_work(a, world)
+                    self.action = None
+            return
+
         # eat / sleep / play: walk to a fixed spot, then restore the need
         self._move_to(a["target"], gdt)
         if self._at(a["target"]):
@@ -196,6 +214,22 @@ class Character:
             self.needs[n] = min(100.0, self.needs[n] + gain)
             if self.needs[n] >= S.SATED:
                 self.action = None
+
+    def _finish_work(self, a, world):
+        t = a["type"]
+        obj = a.get("obj")
+        if t == "chop":
+            msg, col = world.gather(obj, "wood")
+        elif t == "mine":
+            msg, col = world.gather(obj, "stone")
+        elif t == "farm":
+            msg, col = world.tend_plot(obj)
+        elif t == "craft":
+            msg, col = world.craft()
+        else:
+            msg, col = None, None
+        if msg:
+            self.say(msg, col)
 
     def _socialize(self, p, gdt):
         # both villagers benefit; the relationship warms over time
