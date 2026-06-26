@@ -83,12 +83,13 @@ NIGHT_ALPHA = 140         # darkness of the deep-night overlay
 REQUEST_THRESHOLD = 35    # willingness must clear this for a villager to comply
 
 # --- Resources, gathering, farming, crafting (v0.3) -------------------
-STOCK_KINDS = ["wood", "stone", "grain", "food", "tools", "bucket", "water"]
-WORK_TYPES = {"chop", "mine", "farm", "craft"}
+STOCK_KINDS = ["wood", "stone", "ore", "ingot", "grain", "food", "bucket", "water"]
+WORK_TYPES = {"chop", "mine", "farm", "craft", "smelt", "minetile", "dig"}
 
 WORK_TIME = 2.4           # game-seconds of effort per work action
 YIELD_WOOD = 2            # wood per chop
 YIELD_STONE = 2           # stone per mine
+YIELD_ORE = 2             # ore per ore-tile mine
 YIELD_GRAIN = 3           # grain per harvest
 NODE_AMOUNT = 3           # chops/mines before a tree/rock is spent
 NODE_REGROW = 45.0        # game-seconds for a spent node to come back
@@ -114,12 +115,26 @@ BUILDABLES = [
     ("Wood Floor", "floor", "wood",  {"wood": 1}),
 ]
 
-# workbench recipes; press C in-game to pick which one to craft
+# --- Tools (v0.8) — durability scales worst->best: wood < stone < metal ----
+TOOL_KINDS = ["axe", "pickaxe", "shovel", "hoe"]
+TOOL_MATS = ["wood", "stone", "metal"]
+TOOL_USES = {"wood": 15, "stone": 35, "metal": 80}   # uses before it breaks
+ACTION_TOOL = {"minetile": "pickaxe", "dig": "shovel"}  # gated actions -> tool
+
+# workbench recipes; press C in-game to pick which one to craft.
+# a {"tool": (kind, mat)} output crafts a durable tool instead of a stockpile item.
 RECIPES = [
     ("meal",   {"grain": 3}, {"food": 2}),
     ("bucket", {"wood": 2}, {"bucket": 1}),
-    ("tools",  {"wood": 2, "stone": 1}, {"tools": 1}),
 ]
+_TOOL_COST = {
+    "wood":  {"wood": 3},
+    "stone": {"wood": 2, "stone": 2},
+    "metal": {"wood": 1, "ingot": 2},
+}
+for _m in TOOL_MATS:
+    for _k in TOOL_KINDS:
+        RECIPES.append((f"{_m} {_k}", dict(_TOOL_COST[_m]), {"tool": (_k, _m)}))
 
 # --- Z-levels (v0.5) — vertical layers, 0 = ground -------------------
 ZLEVELS = 6               # z0 (ground) .. z5

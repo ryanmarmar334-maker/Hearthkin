@@ -25,6 +25,9 @@ ACTION_LABEL = {
     "mine": "mining stone",
     "farm": "working the field",
     "craft": "crafting",
+    "smelt": "smelting",
+    "minetile": "mining",
+    "dig": "digging",
 }
 
 
@@ -310,6 +313,30 @@ class Character:
             msg, col = world.tend_plot(obj)
         elif t == "craft":
             msg, col = world.craft()
+        elif t == "smelt":
+            msg, col = world.smelt()
+        elif t == "minetile":
+            if world.tiles[a["ty"]][a["tx"]] not in (5, 6):
+                msg, col = ("nothing to mine", S.C_DIM)
+            else:
+                res = world.use_tool("pickaxe")
+                if res is None:
+                    msg, col = ("need a pickaxe", S.C_BAD)
+                else:
+                    msg, col = world.mine_tile(a["tx"], a["ty"])
+                    if res == "broke":
+                        self.say("pickaxe broke!", S.C_BAD)
+        elif t == "dig":
+            if world.tiles[a["ty"]][a["tx"]] != 4:
+                msg, col = ("nothing to dig", S.C_DIM)
+            else:
+                res = world.use_tool("shovel")
+                if res is None:
+                    msg, col = ("need a shovel", S.C_BAD)
+                else:
+                    msg, col = world.dig_tile(a["tx"], a["ty"])
+                    if res == "broke":
+                        self.say("shovel broke!", S.C_BAD)
         else:
             msg, col = None, None
         if msg:

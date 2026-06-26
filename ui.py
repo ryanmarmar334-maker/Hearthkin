@@ -37,15 +37,20 @@ def _need_bar(surf, font, x, y, w, label, value):
 
 def _draw_stockpile(surf, font, world):
     px = S.PLAY_W
-    sy = S.TOPBAR + S.PLAY_H - 92
+    sy = S.TOPBAR + S.PLAY_H - 112
     pygame.draw.line(surf, S.C_BAR_BG, (px + 12, sy), (px + S.PANEL_W - 12, sy), 1)
     surf.blit(font.render("SETTLEMENT", True, S.C_DIM), (px + 16, sy + 4))
-    l1 = "  ".join(f"{k}:{world.stock[k]}" for k in ("wood", "stone", "grain"))
-    l2 = "  ".join(f"{k}:{world.stock[k]}" for k in ("food", "tools", "bucket"))
-    l3 = f"water:{world.stock['water']}  berries:{world.berry_count()}"
-    surf.blit(font.render(l1, True, S.C_GOLD), (px + 16, sy + 24))
-    surf.blit(font.render(l2, True, S.C_GOLD), (px + 16, sy + 42))
-    surf.blit(font.render(l3, True, S.C_GOLD), (px + 16, sy + 60))
+    l1 = "  ".join(f"{k}:{world.stock[k]}" for k in ("wood", "stone", "ore", "ingot"))
+    l2 = (f"grain:{world.stock['grain']}  food:{world.stock['food']}  "
+          f"berries:{world.berry_count()}  water:{world.stock['water']}")
+    counts = {k: 0 for k in S.TOOL_KINDS}
+    for t in world.tools:
+        counts[t["kind"]] = counts.get(t["kind"], 0) + 1
+    tools_str = " ".join(f"{k[:2]}{counts[k]}" for k in S.TOOL_KINDS)
+    l3 = f"bucket:{world.stock['bucket']}   tools {tools_str}"
+    surf.blit(font.render(l1, True, S.C_GOLD), (px + 16, sy + 22))
+    surf.blit(font.render(l2, True, S.C_GOLD), (px + 16, sy + 40))
+    surf.blit(font.render(l3, True, S.C_GOLD), (px + 16, sy + 58))
     name, ins, _o = S.RECIPES[world.sel_recipe]
     cost = ", ".join(f"{v} {k}" for k, v in ins.items())
     surf.blit(font.render(f"Bench [C]: {name} ({cost})", True, S.C_DIM), (px + 16, sy + 78))

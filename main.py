@@ -60,23 +60,35 @@ def request_target(world, villagers, selected, mx, my):
         d = ((o.center[0] - lx) ** 2 + (o.center[1] - ly) ** 2) ** 0.5
         if d < bd:
             best, bd = o, d
-    if best is None or bd > 30:
-        return None
-    if best.kind == "food":
-        return "hunger", {"type": "eat", "need": "hunger",
-                          "target": best.center, "obj": best, "t": 0.0}
-    if best.kind == "water":
-        kind = "fetch" if world.stock["bucket"] > 0 else "handdrink"
-        return "thirst", {"type": kind, "need": "thirst", "target": best.center, "t": 0.0}
-    if best.kind == "home":
-        return "energy", {"type": "sleep", "need": "energy", "target": best.center, "t": 0.0}
-    if best.kind == "fun":
-        return "fun", {"type": "play", "need": "fun", "target": best.center, "t": 0.0}
-    # work tasks — no personal need is met, so willingness leans on how much
-    # they like you (need is None => zero "wanted it anyway" urge)
-    work = {"tree": "chop", "rock": "mine", "plot": "farm", "bench": "craft"}.get(best.kind)
-    if work:
-        return None, {"type": work, "target": best.center, "obj": best, "t": 0.0, "work": 0.0}
+    if best is not None and bd <= 30:
+        if best.kind == "food":
+            return "hunger", {"type": "eat", "need": "hunger",
+                              "target": best.center, "obj": best, "t": 0.0}
+        if best.kind == "water":
+            kind = "fetch" if world.stock["bucket"] > 0 else "handdrink"
+            return "thirst", {"type": kind, "need": "thirst", "target": best.center, "t": 0.0}
+        if best.kind == "home":
+            return "energy", {"type": "sleep", "need": "energy", "target": best.center, "t": 0.0}
+        if best.kind == "fun":
+            return "fun", {"type": "play", "need": "fun", "target": best.center, "t": 0.0}
+        # work tasks — no personal need is met, so willingness leans on how much
+        # they like you (need is None => zero "wanted it anyway" urge)
+        work = {"tree": "chop", "rock": "mine", "plot": "farm",
+                "bench": "craft", "smelter": "smelt"}.get(best.kind)
+        if work:
+            return None, {"type": work, "target": best.center, "obj": best,
+                          "t": 0.0, "work": 0.0}
+    # no object nearby — a mineable (stone/ore) or diggable (dirt) tile?
+    tx, ty = int(lx // S.TILE), int(ly // S.TILE)
+    if 0 <= tx < S.GRID_W and 0 <= ty < S.GRID_H:
+        tile = world.tiles[ty][tx]
+        center = (tx * S.TILE + S.TILE / 2, ty * S.TILE + S.TILE / 2)
+        if tile in (5, 6):
+            return None, {"type": "minetile", "target": center,
+                          "tx": tx, "ty": ty, "t": 0.0, "work": 0.0}
+        if tile == 4:
+            return None, {"type": "dig", "target": center,
+                          "tx": tx, "ty": ty, "t": 0.0, "work": 0.0}
     return None
 
 

@@ -34,6 +34,7 @@ class World:
         self.stock["stone"] = 20
         self.berries = []        # perishable: list of {count, age} batches
         self.sel_recipe = 0      # which workbench recipe is selected
+        self.tools = []          # durable tools: {kind, mat, uses}
         # built structures: build[y][x] = {"kind","mat"} or None (walls block)
         self.build = [[None for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
         self._build()
@@ -94,7 +95,8 @@ class World:
                 plot.state = "untilled"
                 self.plots.append(plot)
         self.bench = Obj("bench", 16, 11)
-        workables = self.trees + self.rocks + self.plots + [self.bench]
+        self.smelter = Obj("smelter", 18, 11)
+        workables = self.trees + self.rocks + self.plots + [self.bench, self.smelter]
         self.objects.extend(workables)
         for o in workables:                       # clear ground under them
             self.tiles[o.ty][o.tx] = 0
@@ -228,13 +230,54 @@ class World:
 
     def craft(self):
         name, ins, outs = S.RECIPES[self.sel_recipe]
-        if all(self.stock[k] >= v for k, v in ins.items()):
-            for k, v in ins.items():
-                self.stock[k] -= v
-            for k, v in outs.items():
-                self.stock[k] += v
-            return (", ".join(f"+{v} {k}" for k, v in outs.items()), S.C_GOLD)
-        return (f"need {name} mats", S.C_BAD)
+        if not all(self.stock[k] >= v for k, v in ins.items()):
+            return (f"need {name} mats", S.C_BAD)
+        for k, v in ins.items():
+            self.stock[k] -= v
+        if "tool" in outs:
+            kind, mat = outs["tool"]
+            self.tools.append({"kind": kind, "mat": mat, "uses": S.TOOL_USES[mat]})
+            return (f"+{mat} {kind}", S.C_GOLD)
+        for k, v in outs.items():
+            self.stock[k] += v
+        return (", ".join(f"+{v} {k}" for k, v in outs.items()), S.C_GOLD)
+
+    def smelt(self):
+        if self.stock["ore"] >= 1 and self.stock["wood"] >= 1:
+            self.stock["ore"] -= 1
+            self.stock["wood"] -= 1            # wood as fuel
+            self.stock["ingot"] += 1
+            return ("+1 ingot", S.C_GOLD)
+        return ("need ore + wood", S.C_BAD)
+
+    def use_tool(self, kind):
+        """Spend one use of a tool of this kind. Returns 'used', 'broke', or None."""
+        for tl in self.tools:
+            if tl["kind"] == kind and tl["uses"] > 0:
+                tl["uses"] -= 1
+                if tl["uses"] <= 0:
+                    self.tools.remove(tl)
+                    return "broke"
+                return "used"
+        return None
+
+    def mine_tile(self, tx, ty):
+        t = self.tiles[ty][tx]
+        if t == 6:                            # ore -> stone
+            self.tiles[ty][tx] = 5
+            self.stock["ore"] += S.YIELD_ORE
+            return (f"+{S.YIELD_ORE} ore", S.C_GOLD)
+        if t == 5:                            # stone -> dirt
+            self.tiles[ty][tx] = 4
+            self.stock["stone"] += S.YIELD_STONE
+            return (f"+{S.YIELD_STONE} stone", S.C_GOLD)
+        return ("nothing to mine", S.C_DIM)
+
+    def dig_tile(self, tx, ty):
+        if self.tiles[ty][tx] == 4:           # dirt -> grass
+            self.tiles[ty][tx] = 0
+            return ("dug", S.C_GOOD)
+        return ("nothing to dig", S.C_DIM)
 
     # -- berry store (perishable foraged food) -------------------------
     def add_berries(self, n):
@@ -315,6 +358,10 @@ class World:
             elif o.kind == "bench":
                 pygame.draw.rect(surf, S.C_BENCH, (cx - 12, cy - 6, 24, 12))
                 pygame.draw.rect(surf, (90, 72, 44), (cx - 12, cy - 6, 24, 12), 1)
+            elif o.kind == "smelter":
+                pygame.draw.rect(surf, (96, 96, 104), (cx - 11, cy - 10, 22, 20))
+                pygame.draw.rect(surf, (60, 62, 70), (cx - 11, cy - 10, 22, 20), 2)
+                pygame.draw.rect(surf, (232, 120, 40), (cx - 4, cy + 1, 8, 7))   # ember
             elif o.kind == "water":
                 pygame.draw.circle(surf, (70, 120, 170), (int(cx), int(cy)), 8)
                 pygame.draw.circle(surf, (150, 200, 230), (int(cx), int(cy)), 4)
