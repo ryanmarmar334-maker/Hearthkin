@@ -36,9 +36,11 @@ def request_target(world, villagers, selected, mx, my):
     if best is None or bd > 30:
         return None
     if best.kind == "food":
-        return "hunger", {"type": "eat", "need": "hunger", "target": best.center, "t": 0.0}
+        return "hunger", {"type": "eat", "need": "hunger",
+                          "target": best.center, "obj": best, "t": 0.0}
     if best.kind == "water":
-        return "thirst", {"type": "drink", "need": "thirst", "target": best.center, "t": 0.0}
+        kind = "fetch" if world.stock["bucket"] > 0 else "handdrink"
+        return "thirst", {"type": kind, "need": "thirst", "target": best.center, "t": 0.0}
     if best.kind == "home":
         return "energy", {"type": "sleep", "need": "energy", "target": best.center, "t": 0.0}
     if best.kind == "fun":
@@ -66,7 +68,7 @@ def run(selftest=False):
     villagers = make_villagers(world)
     selected = None
 
-    game_seconds = 0.0
+    game_seconds = S.DAY_SECONDS * 0.30   # open on Day 1, mid-morning
     speed_idx = 0
     paused = False
 
@@ -90,6 +92,8 @@ def run(selftest=False):
                     speed_idx = min(len(S.SPEEDS) - 1, speed_idx + 1)
                 elif e.key in (pygame.K_MINUS, pygame.K_KP_MINUS):
                     speed_idx = max(0, speed_idx - 1)
+                elif e.key == pygame.K_c:
+                    world.sel_recipe = (world.sel_recipe + 1) % len(S.RECIPES)
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mx, my = e.pos
                 if mx < S.PLAY_W:
@@ -107,24 +111,22 @@ def run(selftest=False):
         for v in villagers:
             v.update(gdt, world, villagers)
 
-        # --- time of day ---
-        total_min = game_seconds * S.GAME_MIN_PER_SEC
-        day = int(total_min // 1440) + 1
-        tod = total_min % 1440
-        hh, mm = int(tod // 60), int(tod % 60)
+        # --- calendar / day-night ---
+        cal = S.calendar(game_seconds)
 
         # --- draw ---
         screen.fill(S.C_GRASS)
         world.draw(screen)
         for v in villagers:
             v.draw(screen, font, v is selected)
-        # gentle night tint
-        if hh < 6 or hh >= 20:
+        # night falls as daylight fades — depth and timing vary by season
+        darkness = int((1.0 - cal["intensity"]) * S.NIGHT_ALPHA)
+        if darkness > 0:
             tint = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)
-            tint.fill((10, 14, 40, 90))
+            tint.fill((10, 14, 40, darkness))
             screen.blit(tint, (0, S.TOPBAR))
         from ui import draw_topbar, draw_panel
-        draw_topbar(screen, font, day, hh, mm, speed, paused)
+        draw_topbar(screen, font, cal, speed, paused)
         draw_panel(screen, font, big, selected, villagers, world)
         pygame.display.flip()
 

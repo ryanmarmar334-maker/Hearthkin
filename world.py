@@ -28,6 +28,8 @@ class World:
         self.tiles = [[0 for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
         self.objects = []
         self.stock = {k: 0 for k in S.STOCK_KINDS}  # settlement stockpile
+        self.berries = []        # perishable: list of {count, age} batches
+        self.sel_recipe = 0      # which workbench recipe is selected
         self._build()
 
     # -- generation ----------------------------------------------------
@@ -50,9 +52,11 @@ class World:
         self.objects.append(Obj("water", 25, 18))
         self.objects.append(Obj("water", 32, 18))
 
-        # food: berry bushes scattered around
+        # food: berry bushes scattered around (harvested for berries)
         for (tx, ty) in [(6, 5), (15, 20), (29, 6), (10, 13), (20, 9)]:
-            self.objects.append(Obj("food", tx, ty))
+            bush = Obj("food", tx, ty)
+            bush.amount = S.BUSH_AMOUNT
+            self.objects.append(bush)
 
         # homes: three huts in different corners
         self.homes = [Obj("home", 4, 3), Obj("home", 30, 21), Obj("home", 4, 21)]
@@ -98,14 +102,18 @@ class World:
     # -- simulation ----------------------------------------------------
     def update(self, gdt):
         for o in self.objects:
-            if o.kind in ("tree", "rock") and o.amount <= 0 and o.regrow > 0:
+            if o.kind in ("tree", "rock", "food") and o.amount <= 0 and o.regrow > 0:
                 o.regrow -= gdt
                 if o.regrow <= 0:
-                    o.amount = S.NODE_AMOUNT
+                    o.amount = S.BUSH_AMOUNT if o.kind == "food" else S.NODE_AMOUNT
             elif o.kind == "plot" and o.state == "seeded":
                 o.growth += gdt
                 if o.growth >= S.CROP_GROW:
                     o.state = "ripe"
+        # berries age and rot away
+        for b in self.berries:
+            b["age"] += gdt
+        self.berries = [b for b in self.berries if b["age"] < S.BERRY_SPOIL]
 
     # -- work outcomes (called by a villager finishing a task) ---------
     def gather(self, obj, kind):
@@ -136,14 +144,28 @@ class World:
         return (None, None)
 
     def craft(self):
-        for name, ins, outs in S.RECIPES:
-            if all(self.stock[k] >= v for k, v in ins.items()):
-                for k, v in ins.items():
-                    self.stock[k] -= v
-                for k, v in outs.items():
-                    self.stock[k] += v
-                return (", ".join(f"+{v} {k}" for k, v in outs.items()), S.C_GOLD)
-        return ("need materials", S.C_BAD)
+        name, ins, outs = S.RECIPES[self.sel_recipe]
+        if all(self.stock[k] >= v for k, v in ins.items()):
+            for k, v in ins.items():
+                self.stock[k] -= v
+            for k, v in outs.items():
+                self.stock[k] += v
+            return (", ".join(f"+{v} {k}" for k, v in outs.items()), S.C_GOLD)
+        return (f"need {name} mats", S.C_BAD)
+
+    # -- berry store (perishable foraged food) -------------------------
+    def add_berries(self, n):
+        self.berries.append({"count": n, "age": 0.0})
+
+    def berry_count(self):
+        return sum(b["count"] for b in self.berries)
+
+    def take_berry(self):
+        for b in self.berries:
+            if b["count"] > 0:
+                b["count"] -= 1
+                break
+        self.berries = [b for b in self.berries if b["count"] > 0]
 
     # -- drawing -------------------------------------------------------
     def draw(self, surf):
@@ -168,8 +190,11 @@ class World:
         for o in self.objects:
             cx, cy = o.center[0], o.center[1] + S.TOPBAR
             if o.kind == "food":
-                pygame.draw.circle(surf, S.C_BUSH, (int(cx), int(cy)), 9)
-                pygame.draw.circle(surf, (200, 90, 130), (int(cx), int(cy)), 4)
+                if o.amount > 0:
+                    pygame.draw.circle(surf, S.C_BUSH, (int(cx), int(cy)), 9)
+                    pygame.draw.circle(surf, (200, 90, 130), (int(cx), int(cy)), 4)
+                else:
+                    pygame.draw.circle(surf, (70, 92, 72), (int(cx), int(cy)), 6)
             elif o.kind == "home":
                 pygame.draw.rect(surf, S.C_HUT, (cx - 12, cy - 8, 24, 16))
                 pygame.draw.polygon(surf, S.C_HUT_ROOF,

@@ -58,14 +58,27 @@ REL_RATE = 7.0        # relationship change per game-second of socializing
 ACTION_TIMEOUT = 16.0 # give up on an action after this many game-seconds
 
 # --- Time --------------------------------------------------------------
-GAME_MIN_PER_SEC = 12     # in-game minutes per real second at speed x1
-SPEEDS = [1, 2, 4]        # selectable game speeds
+SPEEDS = [1, 2, 4, 8]     # selectable game speeds
+
+# --- Calendar & day/night (v0.4) --------------------------------------
+# One day = 20 real minutes at speed x1 (10 day / 10 night at the equinox).
+DAY_SECONDS = 1200.0
+DAYS_PER_WEEK = 7
+WEEKS_PER_MONTH = 4
+DAYS_PER_MONTH = DAYS_PER_WEEK * WEEKS_PER_MONTH     # 28
+MONTHS_PER_YEAR = 4
+DAYS_PER_YEAR = DAYS_PER_MONTH * MONTHS_PER_YEAR     # 112
+SEASONS = ["Spring", "Summer", "Autumn", "Winter"]   # one season per month
+# fraction of each day that is daylight, by season (winter short, summer long)
+DAYLIGHT = {"Spring": 0.50, "Summer": 0.70, "Autumn": 0.50, "Winter": 0.30}
+TWILIGHT = 0.05           # dawn/dusk ramp length (fraction of a day)
+NIGHT_ALPHA = 140         # darkness of the deep-night overlay
 
 # --- Player requests ---------------------------------------------------
 REQUEST_THRESHOLD = 35    # willingness must clear this for a villager to comply
 
 # --- Resources, gathering, farming, crafting (v0.3) -------------------
-STOCK_KINDS = ["wood", "stone", "grain", "food", "tools"]
+STOCK_KINDS = ["wood", "stone", "grain", "food", "tools", "bucket", "water"]
 WORK_TYPES = {"chop", "mine", "farm", "craft"}
 
 WORK_TIME = 2.4           # game-seconds of effort per work action
@@ -75,11 +88,23 @@ YIELD_GRAIN = 3           # grain per harvest
 NODE_AMOUNT = 3           # chops/mines before a tree/rock is spent
 NODE_REGROW = 45.0        # game-seconds for a spent node to come back
 CROP_GROW = 30.0          # game-seconds for a planted crop to ripen
+BUSH_AMOUNT = 4           # harvests a berry bush gives before it's bare
 
-# recipes tried in order at the workbench: (name, inputs, outputs)
+# berries: foraged food that fills hunger and spoils
+BERRIES_PER_HARVEST = 5   # berries gained per bush harvest
+BERRY_FILL = 18           # hunger restored per berry eaten
+BERRY_SPOIL = 60.0        # game-seconds before a batch of berries rots
+
+# water: must craft a bucket to collect it; it fills thirst
+BUCKET_WATER = 8          # water units collected per trip (needs a bucket)
+WATER_FILL = 25           # thirst restored per water unit drunk
+HAND_DRINK = 16.0         # thirst/game-second when drinking by hand (slow, no storage)
+
+# workbench recipes; press C in-game to pick which one to craft
 RECIPES = [
-    ("meal",  {"grain": 3}, {"food": 2}),
-    ("tools", {"wood": 2, "stone": 1}, {"tools": 1}),
+    ("meal",   {"grain": 3}, {"food": 2}),
+    ("bucket", {"wood": 2}, {"bucket": 1}),
+    ("tools",  {"wood": 2, "stone": 1}, {"tools": 1}),
 ]
 
 # resource / station colors
@@ -119,3 +144,40 @@ def rel_label(v):
     if v > -8:   return "Stranger"
     if v > -30:  return "Cool"
     return "Rival"
+
+
+# --- Calendar / day-night helpers -------------------------------------
+def _daylight(frac, dl):
+    """Daylight intensity 0..1 across a day; daytime centered on noon (frac 0.5)."""
+    dawn = 0.5 - dl / 2.0
+    dusk = 0.5 + dl / 2.0
+    tw = TWILIGHT
+    if frac < dawn - tw or frac >= dusk + tw:
+        return 0.0
+    if dawn + tw <= frac < dusk - tw:
+        return 1.0
+    if frac < dawn + tw:
+        return max(0.0, (frac - (dawn - tw)) / (2 * tw))
+    return max(0.0, 1.0 - (frac - (dusk - tw)) / (2 * tw))
+
+
+def calendar(game_seconds):
+    """Convert elapsed game-seconds into a calendar + day/night reading."""
+    total_days = game_seconds / DAY_SECONDS
+    di = int(total_days)
+    frac = total_days - di                       # progress through the day
+    doy = di % DAYS_PER_YEAR                      # day of year (0-based)
+    month_i = doy // DAYS_PER_MONTH              # 0..3 -> season index
+    dom = doy % DAYS_PER_MONTH                    # day of month (0-based)
+    intensity = _daylight(frac, DAYLIGHT[SEASONS[month_i]])
+    return {
+        "year": di // DAYS_PER_YEAR + 1,
+        "season": SEASONS[month_i],
+        "week": dom // DAYS_PER_WEEK + 1,
+        "dow": dom % DAYS_PER_WEEK + 1,
+        "day_num": di + 1,
+        "hh": int(frac * 24) % 24,
+        "mm": int(frac * 24 * 60) % 60,
+        "intensity": intensity,
+        "is_day": intensity > 0.5,
+    }

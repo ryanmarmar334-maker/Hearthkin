@@ -11,8 +11,11 @@ import pygame
 import settings as S
 
 ACTION_LABEL = {
-    "eat": "eating berries",
+    "eat": "harvesting berries",
+    "snack": "eating",
     "drink": "drinking",
+    "handdrink": "drinking by hand",
+    "fetch": "fetching water",
     "sleep": "sleeping",
     "play": "at the shrine",
     "talk": "chatting",
@@ -141,13 +144,23 @@ class Character:
             return
 
         if need == "hunger":
-            obj = world.nearest(self.pos, "food")
-            self.action = {"type": "eat", "need": "hunger",
-                           "target": obj.center, "t": 0.0}
+            if world.berry_count() > 0:
+                self.action = {"type": "snack", "need": "hunger", "t": 0.0}
+            else:
+                obj = world.nearest(self.pos, "food")
+                self.action = {"type": "eat", "need": "hunger",
+                               "target": obj.center, "obj": obj, "t": 0.0}
         elif need == "thirst":
-            obj = world.nearest(self.pos, "water")
-            self.action = {"type": "drink", "need": "thirst",
-                           "target": obj.center, "t": 0.0}
+            if world.stock["water"] > 0:
+                self.action = {"type": "drink", "need": "thirst", "t": 0.0}
+            elif world.stock["bucket"] > 0:
+                obj = world.nearest(self.pos, "water")
+                self.action = {"type": "fetch", "need": "thirst",
+                               "target": obj.center, "t": 0.0}
+            else:                          # no bucket — drink by hand at the pond
+                obj = world.nearest(self.pos, "water")
+                self.action = {"type": "handdrink", "need": "thirst",
+                               "target": obj.center, "t": 0.0}
         elif need == "energy":
             self.action = {"type": "sleep", "need": "energy",
                            "target": self.home.center, "t": 0.0}
@@ -204,16 +217,76 @@ class Character:
                     self.action = None
             return
 
-        # eat / sleep / play: walk to a fixed spot, then restore the need
+        if a["type"] == "snack":           # eat from the berry store, in place
+            self._eat_from_store(world)
+            self.action = None
+            return
+
+        if a["type"] == "drink":           # drink from the water store, in place
+            self._drink_from_store(world)
+            self.action = None
+            return
+
+        if a["type"] == "eat":             # walk to a bush, harvest, then eat
+            self._move_to(a["target"], gdt)
+            if self._at(a["target"]):
+                obj = a.get("obj")
+                if obj is not None and obj.amount > 0:
+                    obj.amount -= 1
+                    if obj.amount <= 0:
+                        obj.regrow = S.NODE_REGROW
+                    world.add_berries(S.BERRIES_PER_HARVEST)
+                    self.say(f"+{S.BERRIES_PER_HARVEST} berries", S.C_GOLD)
+                elif obj is not None:
+                    self.say("bush is bare", S.C_DIM)
+                self._eat_from_store(world)
+                self.action = None
+            return
+
+        if a["type"] == "fetch":           # carry water back — needs a bucket
+            self._move_to(a["target"], gdt)
+            if self._at(a["target"]):
+                if world.stock["bucket"] > 0:
+                    world.stock["water"] += S.BUCKET_WATER
+                    self._drink_from_store(world)
+                else:
+                    self.say("need a bucket", S.C_BAD)
+                self.action = None
+            return
+
+        if a["type"] == "handdrink":       # cup water by hand — slow, no storage
+            self._move_to(a["target"], gdt)
+            if self._at(a["target"]):
+                self.needs["thirst"] = min(100.0, self.needs["thirst"] + S.HAND_DRINK * gdt)
+                if self.needs["thirst"] >= S.SATED:
+                    self.action = None
+            return
+
+        # sleep / play: walk to a fixed spot, then restore the need over time
         self._move_to(a["target"], gdt)
         if self._at(a["target"]):
             n = a["need"]
-            gain = S.RESTORE[n] * gdt
-            if n == "social":
-                gain *= self._social_gain()
-            self.needs[n] = min(100.0, self.needs[n] + gain)
+            self.needs[n] = min(100.0, self.needs[n] + S.RESTORE[n] * gdt)
             if self.needs[n] >= S.SATED:
                 self.action = None
+
+    def _eat_from_store(self, world):
+        eaten = 0
+        while self.needs["hunger"] < S.SATED and world.berry_count() > 0:
+            world.take_berry()
+            self.needs["hunger"] = min(100.0, self.needs["hunger"] + S.BERRY_FILL)
+            eaten += 1
+        if eaten:
+            self.say(f"ate {eaten}", S.C_GOOD)
+
+    def _drink_from_store(self, world):
+        drank = 0
+        while self.needs["thirst"] < S.SATED and world.stock["water"] > 0:
+            world.stock["water"] -= 1
+            self.needs["thirst"] = min(100.0, self.needs["thirst"] + S.WATER_FILL)
+            drank += 1
+        if drank:
+            self.say(f"drank {drank}", S.C_GOOD)
 
     def _finish_work(self, a, world):
         t = a["type"]

@@ -10,14 +10,16 @@ def _bar_color(v):
     return S.C_GOOD
 
 
-def draw_topbar(surf, font, day, hh, mm, speed, paused):
+def draw_topbar(surf, font, cal, speed, paused):
     pygame.draw.rect(surf, S.C_TOPBAR, (0, 0, S.WIDTH, S.TOPBAR))
-    clock = f"Day {day}   {hh:02d}:{mm:02d}"
-    spd = "PAUSED" if paused else f"Speed x{speed}"
+    phase = "Day" if cal["is_day"] else "Night"
+    clock = (f"Year {cal['year']}  {cal['season']}  "
+             f"Wk{cal['week']} Day{cal['dow']}  {cal['hh']:02d}:{cal['mm']:02d} {phase}")
     surf.blit(font.render(clock, True, S.C_GOLD), (10, 4))
+    spd = "PAUSED" if paused else f"x{speed}"
     s = font.render(spd, True, S.C_SELECT if paused else S.C_TEXT)
-    surf.blit(s, (260, 4))
-    hint = "L-click select  ·  R-click assign (gather/farm/craft/move)  ·  Space pause  ·  +/- speed  ·  Esc quit"
+    surf.blit(s, (440, 4))
+    hint = "L-click select · R-click assign · C recipe · Space pause · +/- speed · Esc quit"
     h = font.render(hint, True, S.C_DIM)
     surf.blit(h, (S.WIDTH - h.get_width() - 10, 4))
 
@@ -34,13 +36,18 @@ def _need_bar(surf, font, x, y, w, label, value):
 
 def _draw_stockpile(surf, font, world):
     px = S.PLAY_W
-    sy = S.TOPBAR + S.PLAY_H - 52
+    sy = S.TOPBAR + S.PLAY_H - 92
     pygame.draw.line(surf, S.C_BAR_BG, (px + 12, sy), (px + S.PANEL_W - 12, sy), 1)
     surf.blit(font.render("SETTLEMENT", True, S.C_DIM), (px + 16, sy + 4))
-    l1 = "   ".join(f"{k}:{world.stock[k]}" for k in ("wood", "stone", "grain"))
-    l2 = "   ".join(f"{k}:{world.stock[k]}" for k in ("food", "tools"))
+    l1 = "  ".join(f"{k}:{world.stock[k]}" for k in ("wood", "stone", "grain"))
+    l2 = "  ".join(f"{k}:{world.stock[k]}" for k in ("food", "tools", "bucket"))
+    l3 = f"water:{world.stock['water']}  berries:{world.berry_count()}"
     surf.blit(font.render(l1, True, S.C_GOLD), (px + 16, sy + 24))
     surf.blit(font.render(l2, True, S.C_GOLD), (px + 16, sy + 42))
+    surf.blit(font.render(l3, True, S.C_GOLD), (px + 16, sy + 60))
+    name, ins, _o = S.RECIPES[world.sel_recipe]
+    cost = ", ".join(f"{v} {k}" for k, v in ins.items())
+    surf.blit(font.render(f"Bench [C]: {name} ({cost})", True, S.C_DIM), (px + 16, sy + 78))
 
 
 def draw_panel(surf, font, big, selected, villagers, world):
