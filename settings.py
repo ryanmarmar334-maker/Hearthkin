@@ -105,6 +105,15 @@ BUCKET_WATER = 8          # water units collected per trip (needs a bucket)
 WATER_FILL = 25           # thirst restored per water unit drunk
 HAND_DRINK = 16.0         # thirst/game-second when drinking by hand (slow, no storage)
 
+# build palette (v0.7): (name, kind, material, cost). walls block movement;
+# doors and floors do not. Press B to toggle build mode, TAB to cycle.
+BUILDABLES = [
+    ("Wood Wall",  "wall",  "wood",  {"wood": 2}),
+    ("Stone Wall", "wall",  "stone", {"stone": 2}),
+    ("Door",       "door",  "wood",  {"wood": 1}),
+    ("Wood Floor", "floor", "wood",  {"wood": 1}),
+]
+
 # workbench recipes; press C in-game to pick which one to craft
 RECIPES = [
     ("meal",   {"grain": 3}, {"food": 2}),

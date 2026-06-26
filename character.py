@@ -54,6 +54,8 @@ class Character:
         self.gender = gender      # "M" / "F" / "?"
         self.controlled = controlled  # True = the player drives this one directly
         self.inventory = {}       # carried items (groundwork for tools/goods)
+        self.path = []            # current A* waypoint list
+        self.path_goal = None     # tile the cached path heads to
 
     @property
     def pos(self):
@@ -202,7 +204,7 @@ class Character:
         self.label = ACTION_LABEL[a["type"]]
 
         if a["type"] in ("wander", "goto"):
-            self._move_to(a["target"], gdt)
+            self._step_toward(a["target"], gdt, world)
             if self._at(a["target"]):
                 self.action = None
             return
@@ -210,7 +212,7 @@ class Character:
         if a["type"] == "talk":
             p = a["partner"]
             self.label = "chatting with " + p.name
-            self._move_to(p.pos, gdt)
+            self._step_toward(p.pos, gdt, world)
             if self._near(p.pos, S.TALK_RADIUS):
                 self._socialize(p, gdt)
             if self.needs["social"] >= S.SATED:
@@ -218,7 +220,7 @@ class Character:
             return
 
         if a["type"] in S.WORK_TYPES:
-            self._move_to(a["target"], gdt)
+            self._step_toward(a["target"], gdt, world)
             if self._at(a["target"]):
                 a["work"] += gdt
                 if a["work"] >= S.WORK_TIME:
@@ -237,7 +239,7 @@ class Character:
             return
 
         if a["type"] == "eat":             # walk to a bush, harvest, then eat
-            self._move_to(a["target"], gdt)
+            self._step_toward(a["target"], gdt, world)
             if self._at(a["target"]):
                 obj = a.get("obj")
                 if obj is not None and obj.amount > 0:
@@ -253,7 +255,7 @@ class Character:
             return
 
         if a["type"] == "fetch":           # carry water back — needs a bucket
-            self._move_to(a["target"], gdt)
+            self._step_toward(a["target"], gdt, world)
             if self._at(a["target"]):
                 if world.stock["bucket"] > 0:
                     world.stock["water"] += S.BUCKET_WATER
@@ -264,7 +266,7 @@ class Character:
             return
 
         if a["type"] == "handdrink":       # cup water by hand — slow, no storage
-            self._move_to(a["target"], gdt)
+            self._step_toward(a["target"], gdt, world)
             if self._at(a["target"]):
                 self.needs["thirst"] = min(100.0, self.needs["thirst"] + S.HAND_DRINK * gdt)
                 if self.needs["thirst"] >= S.SATED:
@@ -272,7 +274,7 @@ class Character:
             return
 
         # sleep / play: walk to a fixed spot, then restore the need over time
-        self._move_to(a["target"], gdt)
+        self._step_toward(a["target"], gdt, world)
         if self._at(a["target"]):
             n = a["need"]
             self.needs[n] = min(100.0, self.needs[n] + S.RESTORE[n] * gdt)
@@ -323,6 +325,19 @@ class Character:
         p.rel[self.id] = _clamp(p.rel.get(self.id, 0) + d * p._rel_gain())
 
     # -- movement / geometry ------------------------------------------
+    def _step_toward(self, target, gdt, world):
+        """Move toward a target along an A* path (recomputed if the goal moves)."""
+        goal_tile = world.tile_of(target)
+        if self.path_goal != goal_tile or not self.path:
+            self.path = world.find_path((self.x, self.y), target)
+            self.path_goal = goal_tile
+        if not self.path:
+            return                                     # no route — wait it out
+        wx, wy = self.path[0]
+        self._move_to((wx, wy), gdt)
+        if math.hypot(wx - self.x, wy - self.y) <= S.ARRIVE:
+            self.path.pop(0)
+
     def _move_to(self, target, gdt):
         dx, dy = target[0] - self.x, target[1] - self.y
         d = math.hypot(dx, dy)

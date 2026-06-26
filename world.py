@@ -4,6 +4,7 @@
 
 import random
 import math
+import heapq
 import pygame
 import settings as S
 
@@ -29,8 +30,12 @@ class World:
         self.tiles = [[0 for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
         self.objects = []
         self.stock = {k: 0 for k in S.STOCK_KINDS}  # settlement stockpile
+        self.stock["wood"] = 30  # starting materials (replaced by point-buy at 1.0)
+        self.stock["stone"] = 20
         self.berries = []        # perishable: list of {count, age} batches
         self.sel_recipe = 0      # which workbench recipe is selected
+        # built structures: build[y][x] = {"kind","mat"} or None (walls block)
+        self.build = [[None for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
         self._build()
 
     # -- generation ----------------------------------------------------
@@ -113,6 +118,69 @@ class World:
             if d < bd:
                 best, bd = o, d
         return best
+
+    # -- movement / pathfinding ----------------------------------------
+    def tile_of(self, pt):
+        tx = max(0, min(S.GRID_W - 1, int(pt[0] // S.TILE)))
+        ty = max(0, min(S.GRID_H - 1, int(pt[1] // S.TILE)))
+        return (tx, ty)
+
+    def walkable(self, tx, ty):
+        if not (0 <= tx < S.GRID_W and 0 <= ty < S.GRID_H):
+            return False
+        if self.tiles[ty][tx] == 2:                    # water blocks
+            return False
+        b = self.build[ty][tx]
+        return not (b and b["kind"] == "wall")         # walls block; doors/floors don't
+
+    def _neighbors(self, tx, ty):
+        for nx, ny in ((tx + 1, ty), (tx - 1, ty), (tx, ty + 1), (tx, ty - 1)):
+            if self.walkable(nx, ny):
+                yield nx, ny
+
+    def find_path(self, start, goal):
+        """A* over the tile grid. Returns a list of waypoint points (ending on
+        the exact goal point), or [] if there's no route."""
+        sx, sy = self.tile_of(start)
+        gx, gy = self.tile_of(goal)
+        if not self.walkable(gx, gy):                  # retarget to nearest open neighbor
+            best, bd = None, 1e9
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    nx, ny = gx + dx, gy + dy
+                    if self.walkable(nx, ny):
+                        d = (nx - sx) ** 2 + (ny - sy) ** 2
+                        if d < bd:
+                            bd, best = d, (nx, ny)
+            if best is None:
+                return []
+            gx, gy = best
+        if (sx, sy) == (gx, gy):
+            return [goal]
+        openh = [(0, (sx, sy))]
+        came, gscore = {}, {(sx, sy): 0}
+        while openh:
+            _, cur = heapq.heappop(openh)
+            if cur == (gx, gy):
+                break
+            for nx, ny in self._neighbors(*cur):
+                ng = gscore[cur] + 1
+                if (nx, ny) not in gscore or ng < gscore[(nx, ny)]:
+                    gscore[(nx, ny)] = ng
+                    f = ng + abs(nx - gx) + abs(ny - gy)
+                    heapq.heappush(openh, (f, (nx, ny)))
+                    came[(nx, ny)] = cur
+        if (gx, gy) not in came:
+            return []                                  # unreachable
+        path, cur = [], (gx, gy)
+        while cur != (sx, sy):
+            path.append(cur)
+            cur = came[cur]
+        path.reverse()
+        pts = [(tx * S.TILE + S.TILE / 2, ty * S.TILE + S.TILE / 2) for tx, ty in path]
+        if pts:
+            pts[-1] = goal                             # finish on the exact point
+        return pts
 
     # -- simulation ----------------------------------------------------
     def update(self, gdt):
@@ -250,6 +318,26 @@ class World:
             elif o.kind == "water":
                 pygame.draw.circle(surf, (70, 120, 170), (int(cx), int(cy)), 8)
                 pygame.draw.circle(surf, (150, 200, 230), (int(cx), int(cy)), 4)
+
+    def draw_build(self, surf):
+        """Draw placed walls, doors, and floors."""
+        for by in range(S.GRID_H):
+            for bx in range(S.GRID_W):
+                b = self.build[by][bx]
+                if not b:
+                    continue
+                rx, ry = bx * S.TILE, by * S.TILE + S.TOPBAR
+                if b["kind"] == "floor":
+                    col = (110, 92, 64) if b["mat"] == "wood" else (120, 120, 128)
+                    pygame.draw.rect(surf, col, (rx + 1, ry + 1, S.TILE - 2, S.TILE - 2))
+                elif b["kind"] == "wall":
+                    col = (140, 100, 56) if b["mat"] == "wood" else (122, 124, 132)
+                    edge = (60, 44, 28) if b["mat"] == "wood" else (72, 74, 82)
+                    pygame.draw.rect(surf, col, (rx, ry, S.TILE, S.TILE))
+                    pygame.draw.rect(surf, edge, (rx, ry, S.TILE, S.TILE), 2)
+                elif b["kind"] == "door":
+                    pygame.draw.rect(surf, (96, 72, 44), (rx + 4, ry, S.TILE - 8, S.TILE))
+                    pygame.draw.rect(surf, (150, 116, 70), (rx + 4, ry, S.TILE - 8, S.TILE), 2)
 
     def draw_trees(self, surf, view_z):
         """Draw each tree's slice for the level being viewed (trunk -> crown)."""

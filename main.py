@@ -20,9 +20,33 @@ def make_villagers(world):
     return [
         you,
         Character("Eldra", "Wood Elf",  (120, 200, 130), ["Cheerful", "Loner"],     h[0], 130, 110, player_rel=28, gender="F"),
-        Character("Brakka", "Hill Dwarf", (210, 150, 90), ["Glutton", "Hardy"],     h[1], 820, 560, player_rel=8, gender="M"),
+        Character("Brakka", "Hill Dwarf", (210, 150, 90), ["Glutton", "Hardy"],     h[1], 760, 600, player_rel=8, gender="M"),
         Character("Pip",   "Halfling",  (180, 140, 220), ["Gregarious", "Lazy"],    h[2], 140, 560, player_rel=44, gender="F"),
     ]
+
+
+def place_build(world, villagers, bx, by, sel):
+    if not (0 <= bx < S.GRID_W and 0 <= by < S.GRID_H):
+        return
+    if world.tiles[by][bx] == 2 or world.build[by][bx] is not None:
+        return                                         # no building on water or occupied tiles
+    for v in villagers:                                # don't wall a villager into a tile
+        if int(v.x) // S.TILE == bx and int(v.y) // S.TILE == by:
+            return
+    name, kind, mat, cost = S.BUILDABLES[sel]
+    if all(world.stock[k] >= v for k, v in cost.items()):
+        for k, v in cost.items():
+            world.stock[k] -= v
+        world.build[by][bx] = {"kind": kind, "mat": mat}
+        for v in villagers:
+            v.path = []                                # cached routes may be blocked now
+
+
+def remove_build(world, villagers, bx, by):
+    if 0 <= bx < S.GRID_W and 0 <= by < S.GRID_H and world.build[by][bx]:
+        world.build[by][bx] = None
+        for v in villagers:
+            v.path = []
 
 
 def request_target(world, villagers, selected, mx, my):
@@ -76,6 +100,8 @@ def run(selftest=False):
     speed_idx = 0
     paused = False
     view_z = 0                            # which z-level we're looking at
+    build_mode = False                    # placing walls/doors/floors
+    build_sel = 0                         # index into S.BUILDABLES
 
     frames = 0
     running = True
@@ -103,25 +129,37 @@ def run(selftest=False):
                     view_z = min(S.ZLEVELS - 1, view_z + 1)
                 elif e.key == pygame.K_PAGEDOWN:
                     view_z = max(0, view_z - 1)
+                elif e.key == pygame.K_b:
+                    build_mode = not build_mode
+                elif e.key == pygame.K_TAB and build_mode:
+                    build_sel = (build_sel + 1) % len(S.BUILDABLES)
             elif e.type == pygame.MOUSEWHEEL:
                 view_z = max(0, min(S.ZLEVELS - 1, view_z + e.y))
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mx, my = e.pos
                 if mx < S.PLAY_W and view_z == 0:
-                    hit = next((v for v in villagers if v.hit(mx, my)), None)
-                    if hit is not None:
-                        selected = hit                 # click a villager to inspect
+                    if build_mode:
+                        place_build(world, villagers, mx // S.TILE,
+                                    (my - S.TOPBAR) // S.TILE, build_sel)
                     else:
-                        player.goto(mx, my - S.TOPBAR) # click the ground to move you
+                        hit = next((v for v in villagers if v.hit(mx, my)), None)
+                        if hit is not None:
+                            selected = hit             # click a villager to inspect
+                        else:
+                            player.goto(mx, my - S.TOPBAR)  # click ground to move you
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                 mx, my = e.pos
-                if selected is not None and mx < S.PLAY_W and view_z == 0:
-                    req = request_target(world, villagers, selected, mx, my)
-                    if req:
-                        if selected.controlled:
-                            selected.action = req[1]   # you obey your own commands
-                        else:
-                            selected.consider_request(*req)
+                if mx < S.PLAY_W and view_z == 0:
+                    if build_mode:
+                        remove_build(world, villagers, mx // S.TILE,
+                                     (my - S.TOPBAR) // S.TILE)
+                    elif selected is not None:
+                        req = request_target(world, villagers, selected, mx, my)
+                        if req:
+                            if selected.controlled:
+                                selected.action = req[1]   # you obey your own commands
+                            else:
+                                selected.consider_request(*req)
 
         # --- update ---
         game_seconds += gdt
@@ -135,6 +173,7 @@ def run(selftest=False):
         # --- draw ---
         screen.fill(S.C_GRASS)
         world.draw(screen)
+        world.draw_build(screen)
         for v in villagers:
             v.draw(screen, font, v is selected)
         # looking down from a height: haze the ground & villagers below us
@@ -149,6 +188,22 @@ def run(selftest=False):
             tint = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)
             tint.fill((10, 14, 40, darkness))
             screen.blit(tint, (0, S.TOPBAR))
+        # build mode: ghost tile under the cursor + a control banner
+        if build_mode and view_z == 0:
+            mx, my = pygame.mouse.get_pos()
+            if mx < S.PLAY_W and my > S.TOPBAR:
+                bx, by = mx // S.TILE, (my - S.TOPBAR) // S.TILE
+                ghost = pygame.Surface((S.TILE, S.TILE), pygame.SRCALPHA)
+                ghost.fill((250, 240, 150, 90))
+                screen.blit(ghost, (bx * S.TILE, by * S.TILE + S.TOPBAR))
+            name, kind, mat, cost = S.BUILDABLES[build_sel]
+            costs = ", ".join(f"{v} {k}" for k, v in cost.items())
+            pygame.draw.rect(screen, S.C_TOPBAR, (0, S.HEIGHT - 24, S.PLAY_W, 24))
+            banner = font.render(
+                f"BUILD: {name} ({costs})   ·   TAB cycle · L-click place · R-click remove · B exit",
+                True, S.C_GOLD)
+            screen.blit(banner, (10, S.HEIGHT - 22))
+
         from ui import draw_topbar, draw_panel
         draw_topbar(screen, font, cal, speed, view_z, paused)
         draw_panel(screen, font, big, selected, villagers, world)
