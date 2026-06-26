@@ -67,13 +67,25 @@ prevents painful rewrites later.
 - **Finished goods**: beds, chests, shrines, fishing poles, boats, etc.
 - Per-station **crafting/recipe UI**.
 
-### v0.9 — "Seasons Bite & Skills"
-*Temperature survival + seasonal farming + skills.*
-- **Temperature model**: ambient temp from season + day/night. A **warmth/comfort**
-  state — **summer heat** (seek shade, water, or indoors) and **winter cold** (seek
-  indoors, build a **fireplace** that burns wood to warm a room).
-- **Seasonal farming**: each crop grows only in its season(s); winter halts growth;
-  a real planting calendar.
+### v0.9 — "Depths, Seasons & Skills" (expanded; built in sub-chunks)
+A big, multi-part milestone delivered as tested, pushed pieces:
+
+**v0.9a — World, Camera & Rooms**
+- A larger map with a **scrolling camera**.
+- **Enclosed-room detection** (flood-fill) — the prerequisite for indoor warmth.
+
+**v0.9b — Down & Up (3D world)**
+- **Negative z-levels −1…−5** (~6 ft each): dig downward into earth/stone, mine
+  underground ore, hollow out cellars.
+- **Stairs** in three variants — **up**, **down**, and **up/down** — plus **ramps**
+  (up and down) connecting adjacent z-levels.
+- **Multi-z pathfinding**: villagers traverse levels via stairs/ramps.
+
+**v0.9c — Seasons & Skills**
+- **Temperature model**: ambient temp from season + day/night. **Summer heat**
+  (seek shade, water, or indoors) and **winter cold** (seek indoors, build a
+  **fireplace** that burns wood to warm a room).
+- **Seasonal farming**: each crop grows only in its season(s); winter halts growth.
 - **Skill system**: skills (farming, woodcutting, mining, smithing, cooking, combat…)
   **improve with use**; higher skill → faster work, better yield/quality.
 

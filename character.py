@@ -394,8 +394,8 @@ class Character:
         return best
 
     # -- drawing -------------------------------------------------------
-    def draw(self, surf, font, selected):
-        cx, cy = int(self.x), int(self.y + S.TOPBAR)
+    def draw(self, surf, font, selected, cam):
+        cx, cy = int(self.x - cam[0]), int(self.y - cam[1] + S.TOPBAR)
         if self.controlled:
             pygame.draw.circle(surf, S.C_GOLD, (cx, cy), self.radius + 6, 2)
         if selected:
@@ -410,8 +410,8 @@ class Character:
             surf.blit(txt, (cx - txt.get_width() // 2,
                             cy - self.radius - 34 - i * 16 - rise))
 
-    def hit(self, mx, my):
-        return math.hypot(mx - self.x, my - (self.y + S.TOPBAR)) <= self.radius + 4
+    def hit(self, wx, wy):
+        return math.hypot(wx - self.x, wy - self.y) <= self.radius + 4
 
 
 def _clamp(v):

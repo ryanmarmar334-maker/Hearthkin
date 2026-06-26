@@ -38,6 +38,7 @@ def place_build(world, villagers, bx, by, sel):
         for k, v in cost.items():
             world.stock[k] -= v
         world.build[by][bx] = {"kind": kind, "mat": mat}
+        world.recompute_rooms()
         for v in villagers:
             v.path = []                                # cached routes may be blocked now
 
@@ -45,6 +46,7 @@ def place_build(world, villagers, bx, by, sel):
 def remove_build(world, villagers, bx, by):
     if 0 <= bx < S.GRID_W and 0 <= by < S.GRID_H and world.build[by][bx]:
         world.build[by][bx] = None
+        world.recompute_rooms()
         for v in villagers:
             v.path = []
 
@@ -114,6 +116,8 @@ def run(selftest=False):
     view_z = 0                            # which z-level we're looking at
     build_mode = False                    # placing walls/doors/floors
     build_sel = 0                         # index into S.BUILDABLES
+    cam_x = max(0, min(S.WORLD_W - S.PLAY_W, player.x - S.PLAY_W / 2))
+    cam_y = max(0, min(S.WORLD_H - S.PLAY_H, player.y - S.PLAY_H / 2))
 
     frames = 0
     running = True
@@ -150,28 +154,39 @@ def run(selftest=False):
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mx, my = e.pos
                 if mx < S.PLAY_W and view_z == 0:
+                    wx, wy = mx + int(cam_x), (my - S.TOPBAR) + int(cam_y)
                     if build_mode:
-                        place_build(world, villagers, mx // S.TILE,
-                                    (my - S.TOPBAR) // S.TILE, build_sel)
+                        place_build(world, villagers, wx // S.TILE, wy // S.TILE, build_sel)
                     else:
-                        hit = next((v for v in villagers if v.hit(mx, my)), None)
+                        hit = next((v for v in villagers if v.hit(wx, wy)), None)
                         if hit is not None:
                             selected = hit             # click a villager to inspect
                         else:
-                            player.goto(mx, my - S.TOPBAR)  # click ground to move you
+                            player.goto(wx, wy)        # click ground to move you
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                 mx, my = e.pos
                 if mx < S.PLAY_W and view_z == 0:
+                    wx, wy = mx + int(cam_x), (my - S.TOPBAR) + int(cam_y)
                     if build_mode:
-                        remove_build(world, villagers, mx // S.TILE,
-                                     (my - S.TOPBAR) // S.TILE)
+                        remove_build(world, villagers, wx // S.TILE, wy // S.TILE)
                     elif selected is not None:
-                        req = request_target(world, villagers, selected, mx, my)
+                        req = request_target(world, villagers, selected, wx, wy)
                         if req:
                             if selected.controlled:
                                 selected.action = req[1]   # you obey your own commands
                             else:
                                 selected.consider_request(*req)
+
+        # --- camera (arrow keys pan, clamped to the map) ---
+        keys = pygame.key.get_pressed()
+        pan = S.PAN_SPEED * dt
+        if keys[pygame.K_LEFT]:  cam_x -= pan
+        if keys[pygame.K_RIGHT]: cam_x += pan
+        if keys[pygame.K_UP]:    cam_y -= pan
+        if keys[pygame.K_DOWN]:  cam_y += pan
+        cam_x = max(0, min(S.WORLD_W - S.PLAY_W, cam_x))
+        cam_y = max(0, min(S.WORLD_H - S.PLAY_H, cam_y))
+        cam = (int(cam_x), int(cam_y))
 
         # --- update ---
         game_seconds += gdt
@@ -184,16 +199,16 @@ def run(selftest=False):
 
         # --- draw ---
         screen.fill(S.C_GRASS)
-        world.draw(screen)
-        world.draw_build(screen)
+        world.draw(screen, cam)
+        world.draw_build(screen, cam)
         for v in villagers:
-            v.draw(screen, font, v is selected)
+            v.draw(screen, font, v is selected, cam)
         # looking down from a height: haze the ground & villagers below us
         if view_z > 0:
             haze = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)
             haze.fill((*S.C_HAZE, min(190, view_z * 38)))
             screen.blit(haze, (0, S.TOPBAR))
-        world.draw_trees(screen, view_z)              # tree slice at this level, on top
+        world.draw_trees(screen, view_z, cam)         # tree slice at this level, on top
         # night falls as daylight fades — depth and timing vary by season
         darkness = int((1.0 - cal["intensity"]) * S.NIGHT_ALPHA)
         if darkness > 0:
@@ -204,10 +219,12 @@ def run(selftest=False):
         if build_mode and view_z == 0:
             mx, my = pygame.mouse.get_pos()
             if mx < S.PLAY_W and my > S.TOPBAR:
-                bx, by = mx // S.TILE, (my - S.TOPBAR) // S.TILE
+                wx, wy = mx + int(cam_x), (my - S.TOPBAR) + int(cam_y)
+                bx, by = wx // S.TILE, wy // S.TILE
                 ghost = pygame.Surface((S.TILE, S.TILE), pygame.SRCALPHA)
                 ghost.fill((250, 240, 150, 90))
-                screen.blit(ghost, (bx * S.TILE, by * S.TILE + S.TOPBAR))
+                screen.blit(ghost, (bx * S.TILE - int(cam_x),
+                                    by * S.TILE + S.TOPBAR - int(cam_y)))
             name, kind, mat, cost = S.BUILDABLES[build_sel]
             costs = ", ".join(f"{v} {k}" for k, v in cost.items())
             pygame.draw.rect(screen, S.C_TOPBAR, (0, S.HEIGHT - 24, S.PLAY_W, 24))

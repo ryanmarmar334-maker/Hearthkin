@@ -20,7 +20,7 @@ def draw_topbar(surf, font, cal, speed, view_z, paused):
     surf.blit(font.render(spd, True, S.C_SELECT if paused else S.C_TEXT), (430, 4))
     zlabel = "ground" if view_z == 0 else f"{view_z * S.FEET_PER_Z}ft up"
     surf.blit(font.render(f"Z{view_z} {zlabel}", True, S.C_SELECT), (490, 4))
-    hint = "L-click move you / select · R-click act / assign · wheel z-level · Space pause · Esc quit"
+    hint = "L-click move/select · R-click act · arrows pan · wheel z · B build · Space pause · Esc quit"
     h = font.render(hint, True, S.C_DIM)
     surf.blit(h, (S.WIDTH - h.get_width() - 10, 4))
 

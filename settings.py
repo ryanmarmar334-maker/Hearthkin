@@ -12,8 +12,11 @@ HEIGHT = PLAY_H + TOPBAR    # 724
 FPS = 60
 
 TILE = 28
-GRID_W = PLAY_W // TILE     # 35
-GRID_H = PLAY_H // TILE     # 25
+GRID_W = 70                 # map is larger than the viewport — the camera scrolls
+GRID_H = 50
+WORLD_W = GRID_W * TILE     # full map size in pixels
+WORLD_H = GRID_H * TILE
+PAN_SPEED = 480             # camera pan speed (px/sec) with the arrow keys
 
 # --- Colors ------------------------------------------------------------
 C_GRASS   = (74, 110, 64)

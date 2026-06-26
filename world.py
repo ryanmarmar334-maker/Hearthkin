@@ -5,6 +5,7 @@
 import random
 import math
 import heapq
+from collections import deque
 import pygame
 import settings as S
 
@@ -37,7 +38,9 @@ class World:
         self.tools = []          # durable tools: {kind, mat, uses}
         # built structures: build[y][x] = {"kind","mat"} or None (walls block)
         self.build = [[None for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
+        self.indoor = [[False for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
         self._build()
+        self.recompute_rooms()
 
     # -- generation ----------------------------------------------------
     def _build(self):
@@ -103,7 +106,7 @@ class World:
 
         # decorative trees, avoiding water and objects
         blocked = {(o.tx, o.ty) for o in self.objects}
-        for _ in range(46):
+        for _ in range(200):
             x = self.rng.randrange(S.GRID_W)
             y = self.rng.randrange(S.GRID_H)
             if self.tiles[y][x] not in (0, 1) or (x, y) in blocked:
@@ -183,6 +186,34 @@ class World:
         if pts:
             pts[-1] = goal                             # finish on the exact point
         return pts
+
+    def recompute_rooms(self):
+        """Flood-fill 'outside' from the map edges; tiles the walls seal off
+        from the edge are marked indoors. Call whenever walls change."""
+        def is_wall(x, y):
+            b = self.build[y][x]
+            return bool(b) and b["kind"] == "wall"
+        seen = [[False] * S.GRID_W for _ in range(S.GRID_H)]
+        q = deque()
+        for x in range(S.GRID_W):
+            for y in (0, S.GRID_H - 1):
+                if not is_wall(x, y) and not seen[y][x]:
+                    seen[y][x] = True
+                    q.append((x, y))
+        for y in range(S.GRID_H):
+            for x in (0, S.GRID_W - 1):
+                if not is_wall(x, y) and not seen[y][x]:
+                    seen[y][x] = True
+                    q.append((x, y))
+        while q:
+            x, y = q.popleft()
+            for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if (0 <= nx < S.GRID_W and 0 <= ny < S.GRID_H
+                        and not seen[ny][nx] and not is_wall(nx, ny)):
+                    seen[ny][nx] = True
+                    q.append((nx, ny))
+        self.indoor = [[(not seen[y][x] and not is_wall(x, y))
+                        for x in range(S.GRID_W)] for y in range(S.GRID_H)]
 
     # -- simulation ----------------------------------------------------
     def update(self, gdt):
@@ -294,11 +325,15 @@ class World:
         self.berries = [b for b in self.berries if b["count"] > 0]
 
     # -- drawing -------------------------------------------------------
-    def draw(self, surf):
-        for y in range(S.GRID_H):
-            for x in range(S.GRID_W):
+    def draw(self, surf, cam):
+        x0 = max(0, cam[0] // S.TILE)
+        y0 = max(0, cam[1] // S.TILE)
+        x1 = min(S.GRID_W, (cam[0] + S.PLAY_W) // S.TILE + 1)
+        y1 = min(S.GRID_H, (cam[1] + S.PLAY_H) // S.TILE + 1)
+        for y in range(y0, y1):
+            for x in range(x0, x1):
                 t = self.tiles[y][x]
-                rx, ry = x * S.TILE, y * S.TILE + S.TOPBAR
+                rx, ry = x * S.TILE - cam[0], y * S.TILE + S.TOPBAR - cam[1]
                 if t == 2:
                     col = S.C_WATER
                 elif t == 1:
@@ -323,9 +358,11 @@ class World:
                                        (rx + S.TILE // 2, ry + S.TILE // 2), 3)
 
         for o in self.objects:
-            cx, cy = o.center[0], o.center[1] + S.TOPBAR
             if o.kind == "tree":
                 continue          # trees are drawn per z-level in draw_trees()
+            cx, cy = o.center[0] - cam[0], o.center[1] + S.TOPBAR - cam[1]
+            if not (-S.TILE < cx < S.PLAY_W + S.TILE and S.TOPBAR - S.TILE < cy < S.HEIGHT + S.TILE):
+                continue
             if o.kind == "food":
                 if o.amount > 0:
                     pygame.draw.circle(surf, S.C_BUSH, (int(cx), int(cy)), 9)
@@ -366,14 +403,18 @@ class World:
                 pygame.draw.circle(surf, (70, 120, 170), (int(cx), int(cy)), 8)
                 pygame.draw.circle(surf, (150, 200, 230), (int(cx), int(cy)), 4)
 
-    def draw_build(self, surf):
+    def draw_build(self, surf, cam):
         """Draw placed walls, doors, and floors."""
-        for by in range(S.GRID_H):
-            for bx in range(S.GRID_W):
+        x0 = max(0, cam[0] // S.TILE)
+        y0 = max(0, cam[1] // S.TILE)
+        x1 = min(S.GRID_W, (cam[0] + S.PLAY_W) // S.TILE + 1)
+        y1 = min(S.GRID_H, (cam[1] + S.PLAY_H) // S.TILE + 1)
+        for by in range(y0, y1):
+            for bx in range(x0, x1):
                 b = self.build[by][bx]
                 if not b:
                     continue
-                rx, ry = bx * S.TILE, by * S.TILE + S.TOPBAR
+                rx, ry = bx * S.TILE - cam[0], by * S.TILE + S.TOPBAR - cam[1]
                 if b["kind"] == "floor":
                     col = (110, 92, 64) if b["mat"] == "wood" else (120, 120, 128)
                     pygame.draw.rect(surf, col, (rx + 1, ry + 1, S.TILE - 2, S.TILE - 2))
@@ -386,10 +427,12 @@ class World:
                     pygame.draw.rect(surf, (96, 72, 44), (rx + 4, ry, S.TILE - 8, S.TILE))
                     pygame.draw.rect(surf, (150, 116, 70), (rx + 4, ry, S.TILE - 8, S.TILE), 2)
 
-    def draw_trees(self, surf, view_z):
+    def draw_trees(self, surf, view_z, cam):
         """Draw each tree's slice for the level being viewed (trunk -> crown)."""
         for t in self.trees:
-            cx, cy = int(t.center[0]), int(t.center[1] + S.TOPBAR)
+            cx, cy = int(t.center[0] - cam[0]), int(t.center[1] + S.TOPBAR - cam[1])
+            if not (-S.TILE < cx < S.PLAY_W + S.TILE and S.TOPBAR - S.TILE < cy < S.HEIGHT + S.TILE):
+                continue
             self._tree_segment(surf, cx, cy, view_z, t.height, t.amount > 0)
 
     def _tree_segment(self, surf, cx, cy, z, h, alive):
