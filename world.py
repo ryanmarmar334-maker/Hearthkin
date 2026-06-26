@@ -46,6 +46,16 @@ class World:
                 if 0 <= y < S.GRID_H and 0 <= x < S.GRID_W:
                     self.tiles[y][x] = 2
 
+        # bare earth and a rocky outcrop — future shovel/pick targets (v0.6)
+        for y in range(2, 4):
+            for x in range(18, 22):
+                self.tiles[y][x] = 4              # dirt patch
+        for y in range(2, 6):
+            for x in range(31, 35):
+                self.tiles[y][x] = 5              # stone outcrop
+        for (x, y) in [(32, 3), (33, 4), (31, 2), (34, 5)]:
+            self.tiles[y][x] = 6                  # ore veins in the stone
+
         # fun spot: a shrine beside the pond
         self.objects.append(Obj("fun", 24, 18))
 
@@ -89,8 +99,8 @@ class World:
         for _ in range(46):
             x = self.rng.randrange(S.GRID_W)
             y = self.rng.randrange(S.GRID_H)
-            if self.tiles[y][x] == 2 or (x, y) in blocked:
-                continue
+            if self.tiles[y][x] not in (0, 1) or (x, y) in blocked:
+                continue                          # only place decor on plain grass
             self.tiles[y][x] = 3
 
     # -- queries -------------------------------------------------------
@@ -182,6 +192,12 @@ class World:
                     col = S.C_WATER
                 elif t == 1:
                     col = S.C_GRASS2
+                elif t == 4:
+                    col = S.C_DIRT
+                elif t == 5:
+                    col = S.C_STONEG
+                elif t == 6:
+                    col = S.C_ORE
                 else:
                     col = S.C_GRASS
                 pygame.draw.rect(surf, col, (rx, ry, S.TILE, S.TILE))
@@ -191,6 +207,9 @@ class World:
                     pygame.draw.circle(surf, S.C_TREE,
                                        (rx + S.TILE // 2, ry + S.TILE // 2 - 2),
                                        S.TILE // 2 - 1)
+                elif t == 6:  # ore flecks
+                    pygame.draw.circle(surf, (214, 184, 126),
+                                       (rx + S.TILE // 2, ry + S.TILE // 2), 3)
 
         for o in self.objects:
             cx, cy = o.center[0], o.center[1] + S.TOPBAR

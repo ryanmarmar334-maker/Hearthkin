@@ -37,6 +37,11 @@ C_WARN    = (220, 190, 90)
 C_BAD     = (210, 90, 90)
 C_GOLD    = (240, 210, 130)
 
+# terrain materials — tile codes 4 dirt, 5 stone, 6 ore (v0.6 groundwork)
+C_DIRT    = (120, 92, 60)
+C_STONEG  = (122, 122, 130)
+C_ORE     = (140, 122, 98)
+
 # --- Needs -------------------------------------------------------------
 NEEDS = ["hunger", "thirst", "energy", "social", "fun"]
 NEED_LABEL = {"hunger": "Food", "thirst": "Water", "energy": "Energy",

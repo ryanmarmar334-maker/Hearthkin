@@ -15,10 +15,13 @@ from character import Character
 
 def make_villagers(world):
     h = world.homes
+    you = Character("You", "Human", (236, 226, 138), ["Cheerful"], h[0], 480, 360,
+                    player_rel=100, gender="M", controlled=True)
     return [
-        Character("Eldra", "Wood Elf",  (120, 200, 130), ["Cheerful", "Loner"],     h[0], 130, 110, player_rel=28),
-        Character("Brakka", "Hill Dwarf", (210, 150, 90), ["Glutton", "Hardy"],     h[1], 820, 560, player_rel=8),
-        Character("Pip",   "Halfling",  (180, 140, 220), ["Gregarious", "Lazy"],    h[2], 140, 560, player_rel=44),
+        you,
+        Character("Eldra", "Wood Elf",  (120, 200, 130), ["Cheerful", "Loner"],     h[0], 130, 110, player_rel=28, gender="F"),
+        Character("Brakka", "Hill Dwarf", (210, 150, 90), ["Glutton", "Hardy"],     h[1], 820, 560, player_rel=8, gender="M"),
+        Character("Pip",   "Halfling",  (180, 140, 220), ["Gregarious", "Lazy"],    h[2], 140, 560, player_rel=44, gender="F"),
     ]
 
 
@@ -66,7 +69,8 @@ def run(selftest=False):
 
     world = World()
     villagers = make_villagers(world)
-    selected = None
+    player = villagers[0]            # the character you control directly
+    selected = player
 
     game_seconds = S.DAY_SECONDS * 0.30   # open on Day 1, mid-morning
     speed_idx = 0
@@ -103,14 +107,21 @@ def run(selftest=False):
                 view_z = max(0, min(S.ZLEVELS - 1, view_z + e.y))
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mx, my = e.pos
-                if mx < S.PLAY_W and view_z == 0:      # selection happens on the ground
-                    selected = next((v for v in villagers if v.hit(mx, my)), None)
+                if mx < S.PLAY_W and view_z == 0:
+                    hit = next((v for v in villagers if v.hit(mx, my)), None)
+                    if hit is not None:
+                        selected = hit                 # click a villager to inspect
+                    else:
+                        player.goto(mx, my - S.TOPBAR) # click the ground to move you
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                 mx, my = e.pos
                 if selected is not None and mx < S.PLAY_W and view_z == 0:
                     req = request_target(world, villagers, selected, mx, my)
                     if req:
-                        selected.consider_request(*req)
+                        if selected.controlled:
+                            selected.action = req[1]   # you obey your own commands
+                        else:
+                            selected.consider_request(*req)
 
         # --- update ---
         game_seconds += gdt

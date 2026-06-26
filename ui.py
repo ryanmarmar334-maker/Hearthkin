@@ -20,7 +20,7 @@ def draw_topbar(surf, font, cal, speed, view_z, paused):
     surf.blit(font.render(spd, True, S.C_SELECT if paused else S.C_TEXT), (430, 4))
     zlabel = "ground" if view_z == 0 else f"{view_z * S.FEET_PER_Z}ft up"
     surf.blit(font.render(f"Z{view_z} {zlabel}", True, S.C_SELECT), (490, 4))
-    hint = "PgUp/PgDn or wheel: z-level  ·  Space pause  ·  Esc quit"
+    hint = "L-click move you / select · R-click act / assign · wheel z-level · Space pause · Esc quit"
     h = font.render(hint, True, S.C_DIM)
     surf.blit(h, (S.WIDTH - h.get_width() - 10, 4))
 
@@ -60,7 +60,7 @@ def draw_panel(surf, font, big, selected, villagers, world):
 
     if selected is None:
         surf.blit(big.render("Hearthkin", True, S.C_GOLD), (x, y))
-        surf.blit(font.render("v0.1 — the people", True, S.C_DIM), (x, y + 30))
+        surf.blit(font.render("a fantasy life-sim", True, S.C_DIM), (x, y + 30))
         msg = ["", "Click a villager to inspect them.",
                "", "Select one, then right-click to",
                "assign work:",
@@ -81,7 +81,9 @@ def draw_panel(surf, font, big, selected, villagers, world):
     # header
     pygame.draw.circle(surf, c.color, (x + 12, y + 10), 11)
     surf.blit(big.render(c.name, True, S.C_TEXT), (x + 32, y - 2))
-    surf.blit(font.render(c.race, True, S.C_DIM), (x + 32, y + 22))
+    gender = {"M": "Male", "F": "Female"}.get(c.gender, "—")
+    sub = f"{c.race} · {gender}" + ("  (You)" if c.controlled else "")
+    surf.blit(font.render(sub, True, S.C_DIM), (x + 32, y + 22))
     y += 48
 
     surf.blit(font.render("Traits: " + ", ".join(c.traits), True, S.C_GOLD), (x, y))

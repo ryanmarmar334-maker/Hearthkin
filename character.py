@@ -20,6 +20,7 @@ ACTION_LABEL = {
     "play": "at the shrine",
     "talk": "chatting",
     "wander": "wandering",
+    "goto": "walking",
     "chop": "chopping wood",
     "mine": "mining stone",
     "farm": "working the field",
@@ -30,7 +31,8 @@ ACTION_LABEL = {
 class Character:
     _next_id = 0
 
-    def __init__(self, name, race, color, traits, home, x, y, player_rel=20.0):
+    def __init__(self, name, race, color, traits, home, x, y, player_rel=20.0,
+                 gender="?", controlled=False):
         self.id = Character._next_id
         Character._next_id += 1
         self.name = name
@@ -49,6 +51,9 @@ class Character:
         self.rel = {}             # other_id -> -100..100
         self.player_rel = float(player_rel)  # how much they like YOU (the player)
         self.floats = []          # transient feedback: {text, color, t}
+        self.gender = gender      # "M" / "F" / "?"
+        self.controlled = controlled  # True = the player drives this one directly
+        self.inventory = {}       # carried items (groundwork for tools/goods)
 
     @property
     def pos(self):
@@ -79,6 +84,10 @@ class Character:
     # -- player requests ----------------------------------------------
     def say(self, text, color):
         self.floats.append({"text": text, "color": color, "t": 2.6})
+
+    def goto(self, x, y):
+        """Send this character to a point (used for direct player movement)."""
+        self.action = {"type": "goto", "target": (float(x), float(y)), "t": 0.0}
 
     def consider_request(self, need, action):
         """Decide whether to honor a player request. Returns (accepted, reply).
@@ -118,7 +127,7 @@ class Character:
     def update(self, gdt, world, others):
         """gdt = game-delta-time (real dt * speed); 0 when paused."""
         self._decay(gdt)
-        if not self.action:
+        if not self.controlled and not self.action:   # the player drives their own char
             self._choose(world, others)
         if self.action:
             self._perform(gdt, world, others)
@@ -192,7 +201,7 @@ class Character:
 
         self.label = ACTION_LABEL[a["type"]]
 
-        if a["type"] == "wander":
+        if a["type"] in ("wander", "goto"):
             self._move_to(a["target"], gdt)
             if self._at(a["target"]):
                 self.action = None
@@ -345,6 +354,8 @@ class Character:
     # -- drawing -------------------------------------------------------
     def draw(self, surf, font, selected):
         cx, cy = int(self.x), int(self.y + S.TOPBAR)
+        if self.controlled:
+            pygame.draw.circle(surf, S.C_GOLD, (cx, cy), self.radius + 6, 2)
         if selected:
             pygame.draw.circle(surf, S.C_SELECT, (cx, cy), self.radius + 4, 2)
         pygame.draw.circle(surf, (12, 14, 18), (cx, cy), self.radius + 1)
