@@ -71,6 +71,7 @@ def run(selftest=False):
     game_seconds = S.DAY_SECONDS * 0.30   # open on Day 1, mid-morning
     speed_idx = 0
     paused = False
+    view_z = 0                            # which z-level we're looking at
 
     frames = 0
     running = True
@@ -94,13 +95,19 @@ def run(selftest=False):
                     speed_idx = max(0, speed_idx - 1)
                 elif e.key == pygame.K_c:
                     world.sel_recipe = (world.sel_recipe + 1) % len(S.RECIPES)
+                elif e.key == pygame.K_PAGEUP:
+                    view_z = min(S.ZLEVELS - 1, view_z + 1)
+                elif e.key == pygame.K_PAGEDOWN:
+                    view_z = max(0, view_z - 1)
+            elif e.type == pygame.MOUSEWHEEL:
+                view_z = max(0, min(S.ZLEVELS - 1, view_z + e.y))
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mx, my = e.pos
-                if mx < S.PLAY_W:
+                if mx < S.PLAY_W and view_z == 0:      # selection happens on the ground
                     selected = next((v for v in villagers if v.hit(mx, my)), None)
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                 mx, my = e.pos
-                if selected is not None and mx < S.PLAY_W:
+                if selected is not None and mx < S.PLAY_W and view_z == 0:
                     req = request_target(world, villagers, selected, mx, my)
                     if req:
                         selected.consider_request(*req)
@@ -119,6 +126,12 @@ def run(selftest=False):
         world.draw(screen)
         for v in villagers:
             v.draw(screen, font, v is selected)
+        # looking down from a height: haze the ground & villagers below us
+        if view_z > 0:
+            haze = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)
+            haze.fill((*S.C_HAZE, min(190, view_z * 38)))
+            screen.blit(haze, (0, S.TOPBAR))
+        world.draw_trees(screen, view_z)              # tree slice at this level, on top
         # night falls as daylight fades — depth and timing vary by season
         darkness = int((1.0 - cal["intensity"]) * S.NIGHT_ALPHA)
         if darkness > 0:
@@ -126,7 +139,7 @@ def run(selftest=False):
             tint.fill((10, 14, 40, darkness))
             screen.blit(tint, (0, S.TOPBAR))
         from ui import draw_topbar, draw_panel
-        draw_topbar(screen, font, cal, speed, paused)
+        draw_topbar(screen, font, cal, speed, view_z, paused)
         draw_panel(screen, font, big, selected, villagers, world)
         pygame.display.flip()
 

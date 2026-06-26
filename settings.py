@@ -107,6 +107,13 @@ RECIPES = [
     ("tools",  {"wood": 2, "stone": 1}, {"tools": 1}),
 ]
 
+# --- Z-levels (v0.5) — vertical layers, 0 = ground -------------------
+ZLEVELS = 6               # z0 (ground) .. z5
+FEET_PER_Z = 6            # each level is roughly six feet of height
+C_LEAF  = (74, 140, 80)        # tree foliage
+C_LEAF2 = (104, 176, 104)
+C_HAZE  = (175, 198, 224)      # sky haze when looking down from a height
+
 # resource / station colors
 C_TREE_R  = (46, 92, 52)       # resource-tree canopy
 C_ROCK    = (132, 134, 142)

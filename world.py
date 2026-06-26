@@ -19,6 +19,7 @@ class Obj:
         self.state = None         # plot state: untilled/tilled/seeded/ripe
         self.growth = 0.0         # crop growth timer
         self.regrow = 0.0         # node regrow timer
+        self.height = 0           # height in z-levels (trees)
 
 
 class World:
@@ -62,11 +63,15 @@ class World:
         self.homes = [Obj("home", 4, 3), Obj("home", 30, 21), Obj("home", 4, 21)]
         self.objects.extend(self.homes)
 
-        # gatherable + workable objects (v0.3)
-        self.trees = [Obj("tree", *p) for p in [(12, 4), (8, 9), (20, 4), (14, 15)]]
+        # gatherable + workable objects (v0.3) — trees span several z-levels
+        tree_pos = [(12, 4), (8, 9), (20, 4), (14, 15), (4, 9), (18, 13),
+                    (22, 7), (10, 3), (30, 4), (16, 17), (26, 5), (6, 13)]
+        self.trees = [Obj("tree", *p) for p in tree_pos]
         self.rocks = [Obj("rock", *p) for p in [(28, 10), (31, 13), (26, 8)]]
         for o in self.trees + self.rocks:
             o.amount = S.NODE_AMOUNT
+        for t in self.trees:
+            t.height = self.rng.choice([3, 4, 5])   # 3..5 levels tall
         self.plots = []
         for py in (7, 8):
             for px in (6, 7, 8):
@@ -189,6 +194,8 @@ class World:
 
         for o in self.objects:
             cx, cy = o.center[0], o.center[1] + S.TOPBAR
+            if o.kind == "tree":
+                continue          # trees are drawn per z-level in draw_trees()
             if o.kind == "food":
                 if o.amount > 0:
                     pygame.draw.circle(surf, S.C_BUSH, (int(cx), int(cy)), 9)
@@ -203,12 +210,6 @@ class World:
                 pygame.draw.polygon(surf, S.C_SHRINE,
                                     [(cx, cy - 14), (cx - 11, cy + 8), (cx + 11, cy + 8)])
                 pygame.draw.circle(surf, (255, 255, 235), (int(cx), int(cy - 2)), 3)
-            elif o.kind == "tree":
-                if o.amount > 0:
-                    pygame.draw.rect(surf, S.C_TRUNK, (cx - 3, cy - 2, 6, 13))
-                    pygame.draw.circle(surf, S.C_TREE_R, (int(cx), int(cy - 9)), 12)
-                else:
-                    pygame.draw.rect(surf, S.C_TRUNK, (cx - 4, cy + 3, 8, 6))
             elif o.kind == "rock":
                 if o.amount > 0:
                     pygame.draw.circle(surf, S.C_ROCK, (int(cx), int(cy)), 10)
@@ -230,3 +231,28 @@ class World:
             elif o.kind == "water":
                 pygame.draw.circle(surf, (70, 120, 170), (int(cx), int(cy)), 8)
                 pygame.draw.circle(surf, (150, 200, 230), (int(cx), int(cy)), 4)
+
+    def draw_trees(self, surf, view_z):
+        """Draw each tree's slice for the level being viewed (trunk -> crown)."""
+        for t in self.trees:
+            cx, cy = int(t.center[0]), int(t.center[1] + S.TOPBAR)
+            self._tree_segment(surf, cx, cy, view_z, t.height, t.amount > 0)
+
+    def _tree_segment(self, surf, cx, cy, z, h, alive):
+        if not alive:                                  # chopped — only a stump
+            if z == 0:
+                pygame.draw.rect(surf, S.C_TRUNK, (cx - 4, cy + 2, 8, 6))
+            return
+        if z >= h:
+            return                                     # above the treetop: open sky
+        top = h - 1
+        if z == top:                                   # leafy crown
+            pygame.draw.circle(surf, S.C_LEAF, (cx, cy), 13)
+            pygame.draw.circle(surf, S.C_LEAF2, (cx - 4, cy - 3), 6)
+        elif z == top - 1:                             # branches + leaves
+            pygame.draw.rect(surf, S.C_TRUNK, (cx - 2, cy - 4, 4, 14))
+            for dx in (-11, 11):
+                pygame.draw.line(surf, S.C_TRUNK, (cx, cy + 2), (cx + dx, cy - 6), 2)
+                pygame.draw.circle(surf, S.C_LEAF, (cx + dx, cy - 6), 5)
+        else:                                          # trunk
+            pygame.draw.rect(surf, S.C_TRUNK, (cx - 3, cy - 6, 6, 18))

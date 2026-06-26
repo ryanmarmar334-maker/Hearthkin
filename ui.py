@@ -10,16 +10,17 @@ def _bar_color(v):
     return S.C_GOOD
 
 
-def draw_topbar(surf, font, cal, speed, paused):
+def draw_topbar(surf, font, cal, speed, view_z, paused):
     pygame.draw.rect(surf, S.C_TOPBAR, (0, 0, S.WIDTH, S.TOPBAR))
     phase = "Day" if cal["is_day"] else "Night"
     clock = (f"Year {cal['year']}  {cal['season']}  "
              f"Wk{cal['week']} Day{cal['dow']}  {cal['hh']:02d}:{cal['mm']:02d} {phase}")
     surf.blit(font.render(clock, True, S.C_GOLD), (10, 4))
     spd = "PAUSED" if paused else f"x{speed}"
-    s = font.render(spd, True, S.C_SELECT if paused else S.C_TEXT)
-    surf.blit(s, (440, 4))
-    hint = "L-click select · R-click assign · C recipe · Space pause · +/- speed · Esc quit"
+    surf.blit(font.render(spd, True, S.C_SELECT if paused else S.C_TEXT), (430, 4))
+    zlabel = "ground" if view_z == 0 else f"{view_z * S.FEET_PER_Z}ft up"
+    surf.blit(font.render(f"Z{view_z} {zlabel}", True, S.C_SELECT), (490, 4))
+    hint = "PgUp/PgDn or wheel: z-level  ·  Space pause  ·  Esc quit"
     h = font.render(hint, True, S.C_DIM)
     surf.blit(h, (S.WIDTH - h.get_width() - 10, 4))
 
@@ -68,7 +69,10 @@ def draw_panel(surf, font, big, selected, villagers, world):
                "or a bush/hut/shrine/villager to",
                "send them there.",
                "", "They may say no — it depends on",
-               "how much they like you."]
+               "how much they like you.",
+               "", "PgUp/PgDn or the mouse-wheel",
+               "change z-level: trees rise from",
+               "trunk to branches to leafy crown."]
         for i, line in enumerate(msg):
             surf.blit(font.render(line, True, S.C_TEXT), (x, y + 60 + i * 20))
         return
