@@ -39,6 +39,13 @@ class World:
         # built structures: build[y][x] = {"kind","mat"} or None (walls block)
         self.build = [[None for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
         self.indoor = [[False for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
+        self.room_id = [[-1 for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
+        self.rooms = []          # list of room tile-lists; index = room id
+        self.room_heated = []    # parallel to rooms: warmed by a lit fireplace?
+        self.indoor_tiles = []   # cached indoor tile centers (for shelter-seeking)
+        self.season = "Spring"   # set each frame by the main loop
+        self.daylight = 1.0
+        self._fire_fuel = S.FIRE_BURN
         # underground: solid material ("earth"/"stone") until carved to None (open)
         self.under = {z: [["earth" if z >= -2 else "stone" for _ in range(S.GRID_W)]
                           for _ in range(S.GRID_H)]
@@ -307,22 +314,83 @@ class World:
                     q.append((nx, ny))
         self.indoor = [[(not seen[y][x] and not is_wall(x, y))
                         for x in range(S.GRID_W)] for y in range(S.GRID_H)]
+        # label connected indoor areas into rooms (for fireplace warmth)
+        self.room_id = [[-1] * S.GRID_W for _ in range(S.GRID_H)]
+        self.rooms = []
+        self.indoor_tiles = []
+        for sy0 in range(S.GRID_H):
+            for sx0 in range(S.GRID_W):
+                if not self.indoor[sy0][sx0] or self.room_id[sy0][sx0] != -1:
+                    continue
+                rid = len(self.rooms)
+                tiles = []
+                q2 = deque([(sx0, sy0)])
+                self.room_id[sy0][sx0] = rid
+                while q2:
+                    x, y = q2.popleft()
+                    tiles.append((x, y))
+                    self.indoor_tiles.append((x * S.TILE + S.TILE / 2, y * S.TILE + S.TILE / 2))
+                    for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                        if (0 <= nx < S.GRID_W and 0 <= ny < S.GRID_H
+                                and self.indoor[ny][nx] and self.room_id[ny][nx] == -1):
+                            self.room_id[ny][nx] = rid
+                            q2.append((nx, ny))
+                self.rooms.append(tiles)
+        self.room_heated = [False] * len(self.rooms)
+
+    # -- climate helpers ----------------------------------------------
+    def near_water(self, x, y):
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < S.GRID_W and 0 <= ny < S.GRID_H and self.tiles[ny][nx] == 2:
+                    return True
+        return False
+
+    def room_warm(self, x, y):
+        rid = self.room_id[y][x]
+        return rid >= 0 and self.room_heated[rid]
+
+    def nearest_indoor(self, pos):
+        best, bd = None, 1e18
+        for cx, cy in self.indoor_tiles:
+            d = (cx - pos[0]) ** 2 + (cy - pos[1]) ** 2
+            if d < bd:
+                bd, best = d, (cx, cy)
+        return best
 
     # -- simulation ----------------------------------------------------
     def update(self, gdt):
+        rate = S.CROP_SEASON_RATE.get(self.season, 1.0)
         for o in self.objects:
             if o.kind in ("tree", "rock", "food") and o.amount <= 0 and o.regrow > 0:
                 o.regrow -= gdt
                 if o.regrow <= 0:
                     o.amount = S.BUSH_AMOUNT if o.kind == "food" else S.NODE_AMOUNT
             elif o.kind == "plot" and o.state == "seeded":
-                o.growth += gdt
+                o.growth += gdt * rate            # crops don't grow in winter
                 if o.growth >= S.CROP_GROW:
                     o.state = "ripe"
         # berries age and rot away
         for b in self.berries:
             b["age"] += gdt
         self.berries = [b for b in self.berries if b["age"] < S.BERRY_SPOIL]
+        # fireplaces warm their room in winter, burning wood
+        active = 0
+        for i, tiles in enumerate(self.rooms):
+            warm = False
+            if self.season == "Winter":
+                has_fire = any(self.build[y][x] and self.build[y][x]["kind"] == "fireplace"
+                               for (x, y) in tiles)
+                if has_fire and self.stock["wood"] > 0:
+                    warm = True
+                    active += 1
+            self.room_heated[i] = warm
+        if active:
+            self._fire_fuel -= gdt * active
+            if self._fire_fuel <= 0:
+                self.stock["wood"] = max(0, self.stock["wood"] - 1)
+                self._fire_fuel = S.FIRE_BURN
 
     # -- work outcomes (called by a villager finishing a task) ---------
     def gather(self, obj, kind):
@@ -558,6 +626,12 @@ class World:
                 elif b["kind"] == "door":
                     pygame.draw.rect(surf, (96, 72, 44), (rx + 4, ry, S.TILE - 8, S.TILE))
                     pygame.draw.rect(surf, (150, 116, 70), (rx + 4, ry, S.TILE - 8, S.TILE), 2)
+                elif b["kind"] == "fireplace":
+                    pygame.draw.rect(surf, (84, 78, 80), (rx + 3, ry + 6, S.TILE - 6, S.TILE - 8))
+                    lit = self.room_warm(bx, by)
+                    flame = (240, 140, 40) if lit else (90, 60, 40)
+                    pygame.draw.polygon(surf, flame, [(rx + S.TILE // 2, ry + 6),
+                                        (rx + 8, ry + S.TILE - 4), (rx + S.TILE - 8, ry + S.TILE - 4)])
 
     def draw_underground(self, surf, cam, z):
         """Draw an excavated level: solid earth/stone vs carved-open floor."""

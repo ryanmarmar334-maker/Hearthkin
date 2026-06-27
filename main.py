@@ -29,7 +29,7 @@ def place_build(world, villagers, bx, by, z, sel):
     if not (0 <= bx < S.GRID_W and 0 <= by < S.GRID_H):
         return
     name, kind, mat, cost = S.BUILDABLES[sel]
-    if kind in ("wall", "door", "floor"):              # surface structures (z0)
+    if kind in ("wall", "door", "floor", "fireplace"):  # surface structures (z0)
         if z != 0 or world.tiles[by][bx] == 2 or world.build[by][bx] is not None:
             return
         for v in villagers:                            # don't wall a villager into a tile
@@ -223,12 +223,12 @@ def run(selftest=False):
 
         # --- update ---
         game_seconds += gdt
+        cal = S.calendar(game_seconds)
+        world.season = cal["season"]              # feed climate to the sim
+        world.daylight = cal["intensity"]
         world.update(gdt)
         for v in villagers:
             v.update(gdt, world, villagers)
-
-        # --- calendar / day-night ---
-        cal = S.calendar(game_seconds)
 
         # --- draw ---
         if view_z < 0:

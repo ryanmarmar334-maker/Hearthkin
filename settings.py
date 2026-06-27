@@ -46,14 +46,20 @@ C_STONEG  = (122, 122, 130)
 C_ORE     = (140, 122, 98)
 
 # --- Needs -------------------------------------------------------------
-NEEDS = ["hunger", "thirst", "energy", "social", "fun"]
+NEEDS = ["hunger", "thirst", "energy", "social", "fun", "comfort"]
 NEED_LABEL = {"hunger": "Food", "thirst": "Water", "energy": "Energy",
-              "social": "Social", "fun": "Fun"}
+              "social": "Social", "fun": "Fun", "comfort": "Comfort"}
 
-# per game-second decay (need drains toward 0) — thirst builds faster than hunger
-DECAY = {"hunger": 2.2, "thirst": 2.6, "energy": 1.6, "social": 2.0, "fun": 1.8}
+# per game-second decay (need drains toward 0) — comfort is driven by climate, not here
+DECAY = {"hunger": 2.2, "thirst": 2.6, "energy": 1.6, "social": 2.0, "fun": 1.8, "comfort": 0.0}
 # per game-second restore while performing the matching action
-RESTORE = {"hunger": 40, "thirst": 45, "energy": 34, "social": 30, "fun": 34}
+RESTORE = {"hunger": 40, "thirst": 45, "energy": 34, "social": 30, "fun": 34, "comfort": 0}
+
+# --- Climate / comfort (v0.9c) ----------------------------------------
+COMFORT_DECAY = 2.0       # comfort lost per game-sec when exposed to heat/cold
+COMFORT_REGEN = 6.0       # comfort regained per game-sec when sheltered
+FIRE_BURN = 6.0           # game-sec a fireplace burns per unit of wood
+CROP_SEASON_RATE = {"Spring": 1.0, "Summer": 1.2, "Autumn": 1.0, "Winter": 0.0}
 
 SATED = 92        # a need this high counts as satisfied -> stop the action
 ACT_URGE = 45     # only chase a need once its "urge" (100-value) passes this
@@ -116,6 +122,7 @@ BUILDABLES = [
     ("Stone Wall",  "wall",  "stone", {"stone": 2}),
     ("Door",        "door",  "wood",  {"wood": 1}),
     ("Wood Floor",  "floor", "wood",  {"wood": 1}),
+    ("Fireplace",   "fireplace", "stone", {"stone": 3}),
     ("Dig",          "dig",           None, {}),
     ("Stairs Down",  "stairs_down",   None, {}),
     ("Stairs Up",    "stairs_up",     None, {}),

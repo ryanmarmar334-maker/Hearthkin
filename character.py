@@ -22,6 +22,7 @@ ACTION_LABEL = {
     "wander": "wandering",
     "goto": "walking",
     "minework": "mining",
+    "shelter": "sheltering",
     "chop": "chopping wood",
     "mine": "mining stone",
     "farm": "working the field",
@@ -135,6 +136,7 @@ class Character:
     def update(self, gdt, world, others):
         """gdt = game-delta-time (real dt * speed); 0 when paused."""
         self._decay(gdt)
+        self._thermal(gdt, world)
         if not self.controlled and not self.action:   # the player drives their own char
             self._choose(world, others)
         if self.action:
@@ -147,6 +149,28 @@ class Character:
     def _decay(self, gdt):
         for n in S.NEEDS:
             self.needs[n] = max(0.0, self.needs[n] - S.DECAY[n] * self._decay_mult(n) * gdt)
+
+    def _thermal(self, gdt, world):
+        """Comfort tracks the climate: summer heat, winter cold, shelter & fire."""
+        tx, ty = world.tile_of((self.x, self.y))
+        c = self.needs["comfort"]
+        if self.z < 0:                                   # underground stays mild
+            c += S.COMFORT_REGEN * gdt
+        elif world.season == "Summer":
+            if world.indoor[ty][tx] or world.near_water(tx, ty):
+                c += S.COMFORT_REGEN * gdt               # shade or a cool dip
+            else:
+                c -= S.COMFORT_DECAY * world.daylight * gdt
+        elif world.season == "Winter":
+            if world.indoor[ty][tx] and world.room_warm(tx, ty):
+                c += S.COMFORT_REGEN * gdt               # indoors by a fire
+            elif world.indoor[ty][tx]:
+                c -= S.COMFORT_DECAY * 0.4 * gdt         # indoors, but no fire
+            else:
+                c -= S.COMFORT_DECAY * gdt               # out in the cold
+        else:
+            c += S.COMFORT_REGEN * gdt                   # spring/autumn are mild
+        self.needs["comfort"] = max(0.0, min(100.0, c))
 
     def _update_mood(self):
         base = sum(self.needs.values()) / len(self.needs)
@@ -192,6 +216,17 @@ class Character:
                                "partner": partner, "t": 0.0}
             else:
                 self._set_wander(world)
+        elif need == "comfort":
+            if world.season == "Summer":
+                obj = world.nearest(self.pos, "water")   # cool off at the pond
+                tgt = obj.center if obj else None
+            else:
+                tgt = world.nearest_indoor(self.pos)     # winter: find shelter
+            if tgt:
+                self.action = {"type": "shelter", "need": "comfort",
+                               "target": tgt, "t": 0.0}
+            else:
+                self._set_wander(world)
 
     def _set_wander(self, world):
         import random
@@ -213,6 +248,12 @@ class Character:
             tz = a.get("tz", self.z)
             self._step_toward(a["target"], gdt, world, tz)
             if self._at(a["target"]) and self.z == tz:
+                self.action = None
+            return
+
+        if a["type"] == "shelter":         # stay put until comfortable again
+            self._step_toward(a["target"], gdt, world)
+            if self.needs["comfort"] >= S.SATED:
                 self.action = None
             return
 
