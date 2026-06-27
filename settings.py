@@ -112,10 +112,16 @@ HAND_DRINK = 16.0         # thirst/game-second when drinking by hand (slow, no s
 # build palette (v0.7): (name, kind, material, cost). walls block movement;
 # doors and floors do not. Press B to toggle build mode, TAB to cycle.
 BUILDABLES = [
-    ("Wood Wall",  "wall",  "wood",  {"wood": 2}),
-    ("Stone Wall", "wall",  "stone", {"stone": 2}),
-    ("Door",       "door",  "wood",  {"wood": 1}),
-    ("Wood Floor", "floor", "wood",  {"wood": 1}),
+    ("Wood Wall",   "wall",  "wood",  {"wood": 2}),
+    ("Stone Wall",  "wall",  "stone", {"stone": 2}),
+    ("Door",        "door",  "wood",  {"wood": 1}),
+    ("Wood Floor",  "floor", "wood",  {"wood": 1}),
+    ("Dig",          "dig",           None, {}),
+    ("Stairs Down",  "stairs_down",   None, {}),
+    ("Stairs Up",    "stairs_up",     None, {}),
+    ("Stairs Up/Down", "stairs_updown", None, {}),
+    ("Ramp Down",    "ramp_down",     None, {}),
+    ("Ramp Up",      "ramp_up",       None, {}),
 ]
 
 # --- Tools (v0.8) — durability scales worst->best: wood < stone < metal ----
@@ -145,6 +151,11 @@ FEET_PER_Z = 6            # each level is roughly six feet of height
 C_LEAF  = (74, 140, 80)        # tree foliage
 C_LEAF2 = (104, 176, 104)
 C_HAZE  = (175, 198, 224)      # sky haze when looking down from a height
+ZMIN = -5                      # deepest excavatable level (v0.9b)
+C_EARTH  = (96, 72, 50)        # solid earth underground
+C_ROCK   = (88, 88, 96)        # solid stone underground
+C_CARVED = (44, 40, 46)        # open/carved underground floor
+C_STAIR  = (214, 202, 150)     # stair / ramp markers
 
 # resource / station colors
 C_TREE_R  = (46, 92, 52)       # resource-tree canopy

@@ -25,30 +25,41 @@ def make_villagers(world):
     ]
 
 
-def place_build(world, villagers, bx, by, sel):
+def place_build(world, villagers, bx, by, z, sel):
     if not (0 <= bx < S.GRID_W and 0 <= by < S.GRID_H):
         return
-    if world.tiles[by][bx] == 2 or world.build[by][bx] is not None:
-        return                                         # no building on water or occupied tiles
-    for v in villagers:                                # don't wall a villager into a tile
-        if int(v.x) // S.TILE == bx and int(v.y) // S.TILE == by:
-            return
     name, kind, mat, cost = S.BUILDABLES[sel]
-    if all(world.stock[k] >= v for k, v in cost.items()):
-        for k, v in cost.items():
-            world.stock[k] -= v
-        world.build[by][bx] = {"kind": kind, "mat": mat}
-        world.recompute_rooms()
-        for v in villagers:
-            v.path = []                                # cached routes may be blocked now
+    if kind in ("wall", "door", "floor"):              # surface structures (z0)
+        if z != 0 or world.tiles[by][bx] == 2 or world.build[by][bx] is not None:
+            return
+        for v in villagers:                            # don't wall a villager into a tile
+            if int(v.x) // S.TILE == bx and int(v.y) // S.TILE == by:
+                return
+        if all(world.stock[k] >= v for k, v in cost.items()):
+            for k, v in cost.items():
+                world.stock[k] -= v
+            world.build[by][bx] = {"kind": kind, "mat": mat}
+            world.recompute_rooms()
+            for v in villagers:
+                v.path = []
+    elif kind == "dig":
+        if z < 0:
+            world.dig(z, bx, by)
+    elif kind.startswith("stairs") or kind.startswith("ramp"):
+        if z <= 0:
+            world.place_struct(z, bx, by, kind)
 
 
-def remove_build(world, villagers, bx, by):
-    if 0 <= bx < S.GRID_W and 0 <= by < S.GRID_H and world.build[by][bx]:
+def remove_build(world, villagers, bx, by, z):
+    if not (0 <= bx < S.GRID_W and 0 <= by < S.GRID_H):
+        return
+    if z == 0 and world.build[by][bx]:
         world.build[by][bx] = None
         world.recompute_rooms()
         for v in villagers:
             v.path = []
+    elif world.zstruct.get(z) and world.zstruct[z][by][bx]:
+        world.zstruct[z][by][bx] = None
 
 
 def request_target(world, villagers, selected, mx, my):
@@ -144,20 +155,20 @@ def run(selftest=False):
                 elif e.key == pygame.K_PAGEUP:
                     view_z = min(S.ZLEVELS - 1, view_z + 1)
                 elif e.key == pygame.K_PAGEDOWN:
-                    view_z = max(0, view_z - 1)
+                    view_z = max(S.ZMIN, view_z - 1)
                 elif e.key == pygame.K_b:
                     build_mode = not build_mode
                 elif e.key == pygame.K_TAB and build_mode:
                     build_sel = (build_sel + 1) % len(S.BUILDABLES)
             elif e.type == pygame.MOUSEWHEEL:
-                view_z = max(0, min(S.ZLEVELS - 1, view_z + e.y))
+                view_z = max(S.ZMIN, min(S.ZLEVELS - 1, view_z + e.y))
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mx, my = e.pos
-                if mx < S.PLAY_W and view_z == 0:
+                if mx < S.PLAY_W:
                     wx, wy = mx + int(cam_x), (my - S.TOPBAR) + int(cam_y)
-                    if build_mode:
-                        place_build(world, villagers, wx // S.TILE, wy // S.TILE, build_sel)
-                    else:
+                    if build_mode and view_z <= 0:
+                        place_build(world, villagers, wx // S.TILE, wy // S.TILE, view_z, build_sel)
+                    elif not build_mode and view_z == 0:
                         hit = next((v for v in villagers if v.hit(wx, wy)), None)
                         if hit is not None:
                             selected = hit             # click a villager to inspect
@@ -165,11 +176,11 @@ def run(selftest=False):
                             player.goto(wx, wy)        # click ground to move you
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                 mx, my = e.pos
-                if mx < S.PLAY_W and view_z == 0:
+                if mx < S.PLAY_W:
                     wx, wy = mx + int(cam_x), (my - S.TOPBAR) + int(cam_y)
-                    if build_mode:
-                        remove_build(world, villagers, wx // S.TILE, wy // S.TILE)
-                    elif selected is not None:
+                    if build_mode and view_z <= 0:
+                        remove_build(world, villagers, wx // S.TILE, wy // S.TILE, view_z)
+                    elif not build_mode and view_z == 0 and selected is not None:
                         req = request_target(world, villagers, selected, wx, wy)
                         if req:
                             if selected.controlled:
@@ -198,25 +209,31 @@ def run(selftest=False):
         cal = S.calendar(game_seconds)
 
         # --- draw ---
-        screen.fill(S.C_GRASS)
-        world.draw(screen, cam)
-        world.draw_build(screen, cam)
-        for v in villagers:
-            v.draw(screen, font, v is selected, cam)
-        # looking down from a height: haze the ground & villagers below us
-        if view_z > 0:
-            haze = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)
-            haze.fill((*S.C_HAZE, min(190, view_z * 38)))
-            screen.blit(haze, (0, S.TOPBAR))
-        world.draw_trees(screen, view_z, cam)         # tree slice at this level, on top
-        # night falls as daylight fades — depth and timing vary by season
-        darkness = int((1.0 - cal["intensity"]) * S.NIGHT_ALPHA)
-        if darkness > 0:
-            tint = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)
-            tint.fill((10, 14, 40, darkness))
-            screen.blit(tint, (0, S.TOPBAR))
+        if view_z < 0:
+            screen.fill((18, 16, 20))                 # underground darkness
+            world.draw_underground(screen, cam, view_z)
+            world.draw_struct(screen, cam, view_z)
+        else:
+            screen.fill(S.C_GRASS)
+            world.draw(screen, cam)
+            world.draw_build(screen, cam)
+            world.draw_struct(screen, cam, 0)         # surface stairwells
+            for v in villagers:
+                v.draw(screen, font, v is selected, cam)
+            # looking down from a height: haze the ground & villagers below us
+            if view_z > 0:
+                haze = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)
+                haze.fill((*S.C_HAZE, min(190, view_z * 38)))
+                screen.blit(haze, (0, S.TOPBAR))
+            world.draw_trees(screen, view_z, cam)     # tree slice at this level, on top
+            # night falls as daylight fades — depth and timing vary by season
+            darkness = int((1.0 - cal["intensity"]) * S.NIGHT_ALPHA)
+            if darkness > 0:
+                tint = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)
+                tint.fill((10, 14, 40, darkness))
+                screen.blit(tint, (0, S.TOPBAR))
         # build mode: ghost tile under the cursor + a control banner
-        if build_mode and view_z == 0:
+        if build_mode and view_z <= 0:
             mx, my = pygame.mouse.get_pos()
             if mx < S.PLAY_W and my > S.TOPBAR:
                 wx, wy = mx + int(cam_x), (my - S.TOPBAR) + int(cam_y)

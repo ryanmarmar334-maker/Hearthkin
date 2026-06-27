@@ -18,7 +18,12 @@ def draw_topbar(surf, font, cal, speed, view_z, paused):
     surf.blit(font.render(clock, True, S.C_GOLD), (10, 4))
     spd = "PAUSED" if paused else f"x{speed}"
     surf.blit(font.render(spd, True, S.C_SELECT if paused else S.C_TEXT), (430, 4))
-    zlabel = "ground" if view_z == 0 else f"{view_z * S.FEET_PER_Z}ft up"
+    if view_z == 0:
+        zlabel = "ground"
+    elif view_z > 0:
+        zlabel = f"{view_z * S.FEET_PER_Z}ft up"
+    else:
+        zlabel = f"{-view_z * S.FEET_PER_Z}ft down"
     surf.blit(font.render(f"Z{view_z} {zlabel}", True, S.C_SELECT), (490, 4))
     hint = "L-click move/select · R-click act · arrows pan · wheel z · B build · Space pause · Esc quit"
     h = font.render(hint, True, S.C_DIM)

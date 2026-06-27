@@ -39,6 +39,13 @@ class World:
         # built structures: build[y][x] = {"kind","mat"} or None (walls block)
         self.build = [[None for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
         self.indoor = [[False for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
+        # underground: solid material ("earth"/"stone") until carved to None (open)
+        self.under = {z: [["earth" if z >= -2 else "stone" for _ in range(S.GRID_W)]
+                          for _ in range(S.GRID_H)]
+                      for z in range(-1, S.ZMIN - 1, -1)}
+        # stairs/ramps per level (z 0..ZMIN): grid cell None or a kind string
+        self.zstruct = {z: [[None for _ in range(S.GRID_W)] for _ in range(S.GRID_H)]
+                        for z in range(0, S.ZMIN - 1, -1)}
         self._build()
         self.recompute_rooms()
 
@@ -310,6 +317,45 @@ class World:
             return ("dug", S.C_GOOD)
         return ("nothing to dig", S.C_DIM)
 
+    # -- underground (v0.9b) -------------------------------------------
+    def _above_open(self, z, x, y):
+        """Is the cell directly above (x,y,z) open, so this one is reachable?"""
+        za = z + 1
+        if za == 0:                           # surface: needs a down-stairwell
+            s = self.zstruct[0][y][x]
+            return bool(s) and "down" in s
+        if za in self.under:
+            return self.under[za][y][x] is None
+        return False
+
+    def can_dig(self, z, x, y):
+        if z not in self.under or self.under[z][y][x] is None:
+            return False
+        if self._above_open(z, x, y):             # straight down from a shaft
+            return True
+        g = self.under[z]                          # or tunnel out from an open neighbour
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if 0 <= nx < S.GRID_W and 0 <= ny < S.GRID_H and g[ny][nx] is None:
+                return True
+        return False
+
+    def dig(self, z, x, y):
+        if not self.can_dig(z, x, y):
+            return ("no access above", S.C_DIM)
+        mat = self.under[z][y][x]
+        self.under[z][y][x] = None
+        if mat == "stone":
+            self.stock["stone"] += S.YIELD_STONE
+            return (f"+{S.YIELD_STONE} stone", S.C_GOLD)
+        return ("dug out", S.C_GOOD)
+
+    def place_struct(self, z, x, y, kind):
+        """Place a stair/ramp on level z. A 'down' piece also carves the shaft
+        into the level below so you can descend/dig further."""
+        self.zstruct[z][y][x] = kind
+        if "down" in kind and (z - 1) in self.under:
+            self.under[z - 1][y][x] = None
+
     # -- berry store (perishable foraged food) -------------------------
     def add_berries(self, n):
         self.berries.append({"count": n, "age": 0.0})
@@ -426,6 +472,53 @@ class World:
                 elif b["kind"] == "door":
                     pygame.draw.rect(surf, (96, 72, 44), (rx + 4, ry, S.TILE - 8, S.TILE))
                     pygame.draw.rect(surf, (150, 116, 70), (rx + 4, ry, S.TILE - 8, S.TILE), 2)
+
+    def draw_underground(self, surf, cam, z):
+        """Draw an excavated level: solid earth/stone vs carved-open floor."""
+        x0 = max(0, cam[0] // S.TILE)
+        y0 = max(0, cam[1] // S.TILE)
+        x1 = min(S.GRID_W, (cam[0] + S.PLAY_W) // S.TILE + 1)
+        y1 = min(S.GRID_H, (cam[1] + S.PLAY_H) // S.TILE + 1)
+        grid = self.under[z]
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                rx, ry = x * S.TILE - cam[0], y * S.TILE + S.TOPBAR - cam[1]
+                mat = grid[y][x]
+                if mat is None:
+                    pygame.draw.rect(surf, S.C_CARVED, (rx, ry, S.TILE, S.TILE))
+                    pygame.draw.rect(surf, (30, 28, 32), (rx, ry, S.TILE, S.TILE), 1)
+                else:
+                    col = S.C_EARTH if mat == "earth" else S.C_ROCK
+                    pygame.draw.rect(surf, col, (rx, ry, S.TILE, S.TILE))
+                    pygame.draw.rect(surf, (col[0] - 22, col[1] - 22, col[2] - 22),
+                                     (rx, ry, S.TILE, S.TILE), 1)
+
+    def draw_struct(self, surf, cam, z):
+        """Draw stairs/ramps on level z (up = ^ triangle, down = v triangle)."""
+        grid = self.zstruct.get(z)
+        if grid is None:
+            return
+        x0 = max(0, cam[0] // S.TILE)
+        y0 = max(0, cam[1] // S.TILE)
+        x1 = min(S.GRID_W, (cam[0] + S.PLAY_W) // S.TILE + 1)
+        y1 = min(S.GRID_H, (cam[1] + S.PLAY_H) // S.TILE + 1)
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                s = grid[y][x]
+                if not s:
+                    continue
+                rx, ry = x * S.TILE - cam[0], y * S.TILE + S.TOPBAR - cam[1]
+                cx, cy = rx + S.TILE // 2, ry + S.TILE // 2
+                pygame.draw.rect(surf, (150, 140, 100), (rx + 2, ry + 2, S.TILE - 4, S.TILE - 4), 1)
+                if "down" in s:
+                    pygame.draw.polygon(surf, S.C_STAIR,
+                                        [(cx - 6, cy - 5), (cx + 6, cy - 5), (cx, cy + 6)])
+                if "up" in s:
+                    pygame.draw.polygon(surf, S.C_STAIR,
+                                        [(cx - 6, cy + 5), (cx + 6, cy + 5), (cx, cy - 6)])
+                if "ramp" in s:                # a slash to distinguish ramps from stairs
+                    pygame.draw.line(surf, (120, 110, 80), (rx + 3, ry + S.TILE - 3),
+                                     (rx + S.TILE - 3, ry + 3), 2)
 
     def draw_trees(self, surf, view_z, cam):
         """Draw each tree's slice for the level being viewed (trunk -> crown)."""
