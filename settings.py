@@ -50,14 +50,23 @@ NEEDS = ["hunger", "thirst", "energy", "social", "fun", "comfort"]
 NEED_LABEL = {"hunger": "Food", "thirst": "Water", "energy": "Energy",
               "social": "Social", "fun": "Fun", "comfort": "Comfort"}
 
-# per game-second decay (need drains toward 0) — comfort is driven by climate, not here
-DECAY = {"hunger": 2.2, "thirst": 2.6, "energy": 1.6, "social": 2.0, "fun": 1.8, "comfort": 0.0}
+# per game-second decay (need drains toward 0) — comfort is driven by climate, not here.
+# Tuned to the clock: 20 real min = 24 in-game hours, so 1 in-game hour = 50 game-sec.
+# decay = 2 / (in-game hours to drain full->empty). Roughly realistic spans below:
+DECAY = {                 # full -> empty in ~ in-game hours
+    "hunger": 0.10,       # 20 h
+    "thirst": 0.15,       # 13 h
+    "energy": 0.13,       # 15 h (a waking day, then sleep)
+    "social": 0.09,       # 22 h
+    "fun": 0.11,          # 18 h
+    "comfort": 0.0,       # climate-driven (see _thermal)
+}
 # per game-second restore while performing the matching action
 RESTORE = {"hunger": 40, "thirst": 45, "energy": 34, "social": 30, "fun": 34, "comfort": 0}
 
 # --- Climate / comfort (v0.9c) ----------------------------------------
-COMFORT_DECAY = 2.0       # comfort lost per game-sec when exposed to heat/cold
-COMFORT_REGEN = 6.0       # comfort regained per game-sec when sheltered
+COMFORT_DECAY = 0.25      # comfort lost per game-sec when exposed (~7 in-game h)
+COMFORT_REGEN = 1.0       # comfort regained per game-sec when sheltered
 FIRE_BURN = 6.0           # game-sec a fireplace burns per unit of wood
 CROP_SEASON_RATE = {"Spring": 1.0, "Summer": 1.2, "Autumn": 1.0, "Winter": 0.0}
 
