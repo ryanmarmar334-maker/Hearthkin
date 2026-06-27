@@ -62,12 +62,22 @@ def remove_build(world, villagers, bx, by, z):
         world.zstruct[z][by][bx] = None
 
 
-def request_target(world, villagers, selected, mx, my):
-    """Map a right-click to a (need, action) the selected villager could do."""
+def assign_mine(world, z, tx, ty):
+    """Build a mining action: stand on an open neighbour and excavate the cell."""
+    for nx, ny in ((tx + 1, ty), (tx - 1, ty), (tx, ty + 1), (tx, ty - 1)):
+        if world.walk3(z, nx, ny):
+            stand = (nx * S.TILE + S.TILE / 2, ny * S.TILE + S.TILE / 2)
+            return {"type": "minework", "tx": tx, "ty": ty, "z": z,
+                    "stand": stand, "t": 0.0, "work": 0.0, "timeout": 40.0}
+    return None
+
+
+def request_target(world, villagers, selected, wx, wy):
+    """Map a right-click (world coords) to a (need, action) for the villager."""
     for v in villagers:                      # another villager -> socialize
-        if v is not selected and v.hit(mx, my):
+        if v is not selected and v.hit(wx, wy):
             return "social", {"type": "talk", "partner": v, "t": 0.0}
-    lx, ly = mx, my - S.TOPBAR               # nearest world object -> use it
+    lx, ly = wx, wy                          # nearest world object -> use it
     best, bd = None, 1e9
     for o in world.objects:
         d = ((o.center[0] - lx) ** 2 + (o.center[1] - ly) ** 2) ** 0.5
@@ -174,6 +184,8 @@ def run(selftest=False):
                             selected = hit             # click a villager to inspect
                         else:
                             player.goto(wx, wy)        # click ground to move you
+                    elif not build_mode and view_z < 0:
+                        player.goto(wx, wy, view_z)    # walk you down/around underground
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 3:
                 mx, my = e.pos
                 if mx < S.PLAY_W:
@@ -187,6 +199,16 @@ def run(selftest=False):
                                 selected.action = req[1]   # you obey your own commands
                             else:
                                 selected.consider_request(*req)
+                    elif not build_mode and view_z < 0 and selected is not None:
+                        bx, by = wx // S.TILE, wy // S.TILE
+                        if (0 <= bx < S.GRID_W and 0 <= by < S.GRID_H
+                                and world.under[view_z][by][bx] is not None):
+                            act = assign_mine(world, view_z, bx, by)
+                            if act:
+                                if selected.controlled:
+                                    selected.action = act
+                                else:
+                                    selected.consider_request(None, act)
 
         # --- camera (arrow keys pan, clamped to the map) ---
         keys = pygame.key.get_pressed()
@@ -213,13 +235,18 @@ def run(selftest=False):
             screen.fill((18, 16, 20))                 # underground darkness
             world.draw_underground(screen, cam, view_z)
             world.draw_struct(screen, cam, view_z)
+            for v in villagers:                       # only those on this level
+                if v.z == view_z:
+                    v.draw(screen, font, v is selected, cam)
         else:
             screen.fill(S.C_GRASS)
             world.draw(screen, cam)
             world.draw_build(screen, cam)
             world.draw_struct(screen, cam, 0)         # surface stairwells
-            for v in villagers:
-                v.draw(screen, font, v is selected, cam)
+            if view_z == 0:
+                for v in villagers:
+                    if v.z == 0:
+                        v.draw(screen, font, v is selected, cam)
             # looking down from a height: haze the ground & villagers below us
             if view_z > 0:
                 haze = pygame.Surface((S.PLAY_W, S.PLAY_H), pygame.SRCALPHA)

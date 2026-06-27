@@ -194,6 +194,92 @@ class World:
             pts[-1] = goal                             # finish on the exact point
         return pts
 
+    # -- 3D movement (v0.9b-ii) ----------------------------------------
+    def walk3(self, z, x, y):
+        """Is tile (x,y) on level z standable? Stairs/ramps are always passable."""
+        if not (0 <= x < S.GRID_W and 0 <= y < S.GRID_H):
+            return False
+        s = self.zstruct.get(z)
+        if s and s[y][x]:
+            return True
+        if z == 0:
+            return self.walkable(x, y)
+        if z in self.under:
+            return self.under[z][y][x] is None
+        return False
+
+    def _zedge(self, z, x, y, dz):
+        """Can a character move between (x,y,z) and (x,y,z+dz) via a stair/ramp?"""
+        z2 = z + dz
+        if not (self.walk3(z, x, y) and self.walk3(z2, x, y)):
+            return False
+        a = self.zstruct.get(z)
+        b = self.zstruct.get(z2)
+        sa = a[y][x] if a else None
+        sb = b[y][x] if b else None
+        if dz < 0:                          # going down
+            return bool((sa and "down" in sa) or (sb and "up" in sb))
+        return bool((sa and "up" in sa) or (sb and "down" in sb))
+
+    def find_path3(self, start, goal):
+        """A* across (x,y,z). start/goal are (px, py, z). Returns waypoints
+        (px, py, z); z changes happen at stair/ramp tiles."""
+        sx, sy, sz = start
+        gx, gy, gz = goal
+        stx, sty = self.tile_of((sx, sy))
+        gtx, gty = self.tile_of((gx, gy))
+        s = (stx, sty, sz)
+        if not self.walk3(gz, gtx, gty):    # retarget to an open neighbour
+            best, bd = None, 1e9
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    nx, ny = gtx + dx, gty + dy
+                    if self.walk3(gz, nx, ny):
+                        d = (nx - stx) ** 2 + (ny - sty) ** 2
+                        if d < bd:
+                            bd, best = d, (nx, ny)
+            if best is None:
+                return []
+            gtx, gty = best
+        gt = (gtx, gty, gz)
+        if s == gt:
+            return [(gx, gy, gz)]
+        openh = [(0, s)]
+        came, gsc = {}, {s: 0}
+        while openh:
+            _, cur = heapq.heappop(openh)
+            if cur == gt:
+                break
+            cx, cy, cz = cur
+            nbrs = [(nx, ny, cz) for nx, ny in
+                    ((cx + 1, cy), (cx - 1, cy), (cx, cy + 1), (cx, cy - 1))
+                    if self.walk3(cz, nx, ny)]
+            for dz in (-1, 1):
+                if self._zedge(cz, cx, cy, dz):
+                    nbrs.append((cx, cy, cz + dz))
+            for nb in nbrs:
+                ng = gsc[cur] + 1
+                if nb not in gsc or ng < gsc[nb]:
+                    gsc[nb] = ng
+                    f = ng + abs(nb[0] - gt[0]) + abs(nb[1] - gt[1]) + abs(nb[2] - gt[2])
+                    heapq.heappush(openh, (f, nb))
+                    came[nb] = cur
+        if gt not in came:
+            return []
+        path, cur = [], gt
+        while cur != s:
+            path.append(cur)
+            cur = came[cur]
+        path.reverse()
+        pts = [(tx * S.TILE + S.TILE / 2, ty * S.TILE + S.TILE / 2, tz)
+               for tx, ty, tz in path]
+        if pts:                              # finish exactly on the goal tile
+            if (gtx, gty) == (self.tile_of((gx, gy))):
+                pts[-1] = (gx, gy, gz)
+            else:
+                pts[-1] = (gtx * S.TILE + S.TILE / 2, gty * S.TILE + S.TILE / 2, gz)
+        return pts
+
     def recompute_rooms(self):
         """Flood-fill 'outside' from the map edges; tiles the walls seal off
         from the edge are marked indoors. Call whenever walls change."""

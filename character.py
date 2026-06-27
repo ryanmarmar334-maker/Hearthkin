@@ -21,6 +21,7 @@ ACTION_LABEL = {
     "talk": "chatting",
     "wander": "wandering",
     "goto": "walking",
+    "minework": "mining",
     "chop": "chopping wood",
     "mine": "mining stone",
     "farm": "working the field",
@@ -57,8 +58,9 @@ class Character:
         self.gender = gender      # "M" / "F" / "?"
         self.controlled = controlled  # True = the player drives this one directly
         self.inventory = {}       # carried items (groundwork for tools/goods)
-        self.path = []            # current A* waypoint list
-        self.path_goal = None     # tile the cached path heads to
+        self.z = 0                # which level the character is on (0 = surface)
+        self.path = []            # current A* waypoint list (px, py, z)
+        self.path_goal = None     # (tile, z) the cached path heads to
 
     @property
     def pos(self):
@@ -90,9 +92,10 @@ class Character:
     def say(self, text, color):
         self.floats.append({"text": text, "color": color, "t": 2.6})
 
-    def goto(self, x, y):
-        """Send this character to a point (used for direct player movement)."""
-        self.action = {"type": "goto", "target": (float(x), float(y)), "t": 0.0}
+    def goto(self, x, y, z=0):
+        """Send this character to a point on level z (direct player movement)."""
+        self.action = {"type": "goto", "target": (float(x), float(y)),
+                       "tz": z, "t": 0.0}
 
     def consider_request(self, need, action):
         """Decide whether to honor a player request. Returns (accepted, reply).
@@ -200,16 +203,35 @@ class Character:
     def _perform(self, gdt, world, others):
         a = self.action
         a["t"] += gdt
-        if a["t"] > S.ACTION_TIMEOUT:      # avoid getting stuck forever
+        if a["t"] > a.get("timeout", S.ACTION_TIMEOUT):   # avoid getting stuck forever
             self.action = None
             return
 
         self.label = ACTION_LABEL[a["type"]]
 
         if a["type"] in ("wander", "goto"):
-            self._step_toward(a["target"], gdt, world)
-            if self._at(a["target"]):
+            tz = a.get("tz", self.z)
+            self._step_toward(a["target"], gdt, world, tz)
+            if self._at(a["target"]) and self.z == tz:
                 self.action = None
+            return
+
+        if a["type"] == "minework":        # descend & excavate an underground cell
+            self._step_toward(a["stand"], gdt, world, a["z"])
+            if self._at(a["stand"]) and self.z == a["z"]:
+                a["work"] += gdt
+                if a["work"] >= S.WORK_TIME:
+                    mat = world.under[a["z"]][a["ty"]][a["tx"]]
+                    tool = "pickaxe" if mat == "stone" else "shovel"
+                    res = world.use_tool(tool)
+                    if res is None:
+                        self.say(f"need a {tool}", S.C_BAD)
+                    else:
+                        msg, col = world.dig(a["z"], a["tx"], a["ty"])
+                        self.say(msg, col)
+                        if res == "broke":
+                            self.say(f"{tool} broke!", S.C_BAD)
+                    self.action = None
             return
 
         if a["type"] == "talk":
@@ -352,17 +374,21 @@ class Character:
         p.rel[self.id] = _clamp(p.rel.get(self.id, 0) + d * p._rel_gain())
 
     # -- movement / geometry ------------------------------------------
-    def _step_toward(self, target, gdt, world):
-        """Move toward a target along an A* path (recomputed if the goal moves)."""
-        goal_tile = world.tile_of(target)
-        if self.path_goal != goal_tile or not self.path:
-            self.path = world.find_path((self.x, self.y), target)
-            self.path_goal = goal_tile
+    def _step_toward(self, target, gdt, world, target_z=None):
+        """Move toward a target along a 3D A* path; z changes at stair tiles."""
+        if target_z is None:
+            target_z = self.z
+        goal = (world.tile_of(target), target_z)
+        if self.path_goal != goal or not self.path:
+            self.path = world.find_path3((self.x, self.y, self.z),
+                                         (target[0], target[1], target_z))
+            self.path_goal = goal
         if not self.path:
             return                                     # no route — wait it out
-        wx, wy = self.path[0]
+        wx, wy, wz = self.path[0]
         self._move_to((wx, wy), gdt)
         if math.hypot(wx - self.x, wy - self.y) <= S.ARRIVE:
+            self.z = wz                                # cross onto this waypoint's level
             self.path.pop(0)
 
     def _move_to(self, target, gdt):
