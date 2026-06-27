@@ -137,6 +137,15 @@ TOOL_MATS = ["wood", "stone", "metal"]
 TOOL_USES = {"wood": 15, "stone": 35, "metal": 80}   # uses before it breaks
 ACTION_TOOL = {"minetile": "pickaxe", "dig": "shovel"}  # gated actions -> tool
 
+# --- Skills (v0.9c-ii) — improve with use, speeding up work -----------
+SKILLS = ["woodcutting", "mining", "farming", "crafting", "smithing"]
+ACTION_SKILL = {"chop": "woodcutting", "mine": "mining", "minetile": "mining",
+                "minework": "mining", "farm": "farming", "craft": "crafting",
+                "smelt": "smithing"}
+SKILL_CAP = 10.0
+SKILL_GAIN = 0.2          # levels gained per completed task
+SKILL_SPEED = 0.08        # each level shortens work time: t / (1 + level*this)
+
 # workbench recipes; press C in-game to pick which one to craft.
 # a {"tool": (kind, mat)} output crafts a durable tool instead of a stockpile item.
 RECIPES = [

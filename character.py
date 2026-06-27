@@ -60,6 +60,7 @@ class Character:
         self.controlled = controlled  # True = the player drives this one directly
         self.inventory = {}       # carried items (groundwork for tools/goods)
         self.z = 0                # which level the character is on (0 = surface)
+        self.skills = {}          # skill name -> level (grows with use)
         self.path = []            # current A* waypoint list (px, py, z)
         self.path_goal = None     # (tile, z) the cached path heads to
 
@@ -92,6 +93,16 @@ class Character:
     # -- player requests ----------------------------------------------
     def say(self, text, color):
         self.floats.append({"text": text, "color": color, "t": 2.6})
+
+    def skill_level(self, name):
+        return self.skills.get(name, 0.0) if name else 0.0
+
+    def _gain_skill(self, name):
+        if name:
+            self.skills[name] = min(S.SKILL_CAP, self.skills.get(name, 0.0) + S.SKILL_GAIN)
+
+    def _work_time(self, name):
+        return S.WORK_TIME / (1.0 + self.skill_level(name) * S.SKILL_SPEED)
 
     def goto(self, x, y, z=0):
         """Send this character to a point on level z (direct player movement)."""
@@ -261,7 +272,8 @@ class Character:
             self._step_toward(a["stand"], gdt, world, a["z"])
             if self._at(a["stand"]) and self.z == a["z"]:
                 a["work"] += gdt
-                if a["work"] >= S.WORK_TIME:
+                if a["work"] >= self._work_time("mining"):
+                    self._gain_skill("mining")
                     mat = world.under[a["z"]][a["ty"]][a["tx"]]
                     tool = "pickaxe" if mat == "stone" else "shovel"
                     res = world.use_tool(tool)
@@ -289,8 +301,10 @@ class Character:
             self._step_toward(a["target"], gdt, world)
             if self._at(a["target"]):
                 a["work"] += gdt
-                if a["work"] >= S.WORK_TIME:
+                skill = S.ACTION_SKILL.get(a["type"])
+                if a["work"] >= self._work_time(skill):
                     self._finish_work(a, world)
+                    self._gain_skill(skill)            # practice makes faster
                     self.action = None
             return
 

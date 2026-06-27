@@ -128,3 +128,13 @@ def draw_panel(surf, font, big, selected, villagers, world):
         line = f"{o.name}: {S.rel_label(score)} ({int(score):+d})"
         surf.blit(font.render(line, True, col), (x, y))
         y += 22
+
+    skills = sorted(((k, lv) for k, lv in c.skills.items() if lv > 0.05),
+                    key=lambda kv: -kv[1])
+    if skills:
+        y += 6
+        surf.blit(font.render("SKILLS", True, S.C_DIM), (x, y))
+        y += 20
+        for k, lv in skills[:2]:
+            surf.blit(font.render(f"{k}: Lv {lv:.1f}", True, S.C_TEXT), (x, y))
+            y += 20
