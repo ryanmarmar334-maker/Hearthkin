@@ -23,6 +23,8 @@ ACTION_LABEL = {
     "goto": "walking",
     "minework": "mining",
     "shelter": "sheltering",
+    "buildjob": "building",
+    "craftjob": "crafting",
     "chop": "chopping wood",
     "mine": "mining stone",
     "farm": "working the field",
@@ -192,7 +194,14 @@ class Character:
         urges = {n: 100.0 - self.needs[n] for n in S.NEEDS}
         need = max(urges, key=urges.get)
         if urges[need] < S.ACT_URGE:
-            self._set_wander(world)
+            job = world.claim_order(self.pos)        # nothing pressing -> help build
+            act = self._job_action(world, job)
+            if act:
+                self.action = act
+            else:
+                if job:
+                    job["taken"] = False
+                self._set_wander(world)
             return
 
         if need == "hunger":
@@ -214,8 +223,11 @@ class Character:
                 self.action = {"type": "handdrink", "need": "thirst",
                                "target": obj.center, "t": 0.0}
         elif need == "energy":
-            self.action = {"type": "sleep", "need": "energy",
-                           "target": self.home.center, "t": 0.0}
+            bed = world.nearest_bed(self.pos)        # resting requires a built bed
+            if bed:
+                self.action = {"type": "sleep", "need": "energy", "target": bed, "t": 0.0}
+            else:
+                self._set_wander(world)
         elif need == "fun":
             obj = world.nearest(self.pos, "fun")
             self.action = {"type": "play", "need": "fun",
@@ -239,6 +251,18 @@ class Character:
             else:
                 self._set_wander(world)
 
+    def _job_action(self, world, job):
+        if job is None:
+            return None
+        if job["job"] == "build":
+            stand = world.build_stand(job["x"], job["y"])
+            if stand is None:
+                return None
+            return {"type": "buildjob", "order": job, "stand": stand,
+                    "t": 0.0, "work": 0.0, "timeout": 40.0}
+        return {"type": "craftjob", "order": job, "target": job["center"],
+                "t": 0.0, "work": 0.0, "timeout": 40.0}
+
     def _set_wander(self, world):
         import random
         tx = max(20, min(S.PLAY_W - 20, self.x + random.uniform(-160, 160)))
@@ -250,6 +274,8 @@ class Character:
         a = self.action
         a["t"] += gdt
         if a["t"] > a.get("timeout", S.ACTION_TIMEOUT):   # avoid getting stuck forever
+            if "order" in a:
+                a["order"]["taken"] = False               # release the job for others
             self.action = None
             return
 
@@ -266,6 +292,41 @@ class Character:
             self._step_toward(a["target"], gdt, world)
             if self.needs["comfort"] >= S.SATED:
                 self.action = None
+            return
+
+        if a["type"] == "buildjob":        # construct a pending build order
+            o = a["order"]
+            if o not in world.orders:
+                self.action = None
+                return
+            self._step_toward(a["stand"], gdt, world)
+            if self._at(a["stand"]):
+                a["work"] += gdt
+                if a["work"] >= self._work_time("building"):
+                    world.complete_build(o)
+                    self._gain_skill("building")
+                    self.say("built", S.C_GOOD)
+                    self.action = None
+            return
+
+        if a["type"] == "craftjob":        # fulfill a craft/smelt order at a station
+            o = a["order"]
+            if o not in world.orders:
+                self.action = None
+                return
+            self._step_toward(a["target"], gdt, world)
+            if self._at(a["target"]):
+                a["work"] += gdt
+                if a["work"] >= self._work_time("crafting"):
+                    if o.get("station") == "smelter":
+                        msg, col = world.smelt()
+                    else:
+                        msg, col = world.do_craft(o["recipe"])
+                    self.say(msg, col)
+                    self._gain_skill("crafting")
+                    if o in world.orders:
+                        world.orders.remove(o)
+                    self.action = None
             return
 
         if a["type"] == "minework":        # descend & excavate an underground cell

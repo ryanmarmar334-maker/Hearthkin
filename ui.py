@@ -61,6 +61,30 @@ def _draw_stockpile(surf, font, world):
     surf.blit(font.render(f"Bench [C]: {name} ({cost})", True, S.C_DIM), (px + 16, sy + 78))
 
 
+def draw_build_panel(surf, font, big, build_sel, world):
+    """The build palette shown while in build mode — click a row to choose."""
+    px = S.PLAY_W
+    pygame.draw.rect(surf, S.C_PANEL, (px, S.TOPBAR, S.PANEL_W, S.PLAY_H))
+    x = px + 16
+    surf.blit(big.render("BUILD", True, S.C_GOLD), (x, S.TOPBAR + 12))
+    surf.blit(font.render("click a row to choose", True, S.C_DIM), (x, S.TOPBAR + 40))
+    y0 = S.TOPBAR + 60
+    for i, (name, kind, mat, cost) in enumerate(S.BUILDABLES):
+        y = y0 + i * 22
+        if i == build_sel:
+            pygame.draw.rect(surf, S.C_PANEL2, (px + 8, y - 2, S.PANEL_W - 16, 22))
+        if cost:
+            label = name + "  (" + ", ".join(f"{v} {k}" for k, v in cost.items()) + ")"
+            col = S.C_TEXT if world.afford(cost) else S.C_BAD
+        else:
+            label = name + "  (labor)"
+            col = S.C_TEXT
+        if i == build_sel:
+            col = S.C_SELECT
+        surf.blit(font.render(label, True, col), (x, y))
+    _draw_stockpile(surf, font, world)
+
+
 def draw_panel(surf, font, big, selected, villagers, world):
     px = S.PLAY_W
     pygame.draw.rect(surf, S.C_PANEL, (px, S.TOPBAR, S.PANEL_W, S.PLAY_H))

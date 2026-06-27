@@ -29,19 +29,17 @@ def place_build(world, villagers, bx, by, z, sel):
     if not (0 <= bx < S.GRID_W and 0 <= by < S.GRID_H):
         return
     name, kind, mat, cost = S.BUILDABLES[sel]
-    if kind in ("wall", "door", "floor", "fireplace"):  # surface structures (z0)
-        if z != 0 or world.tiles[by][bx] == 2 or world.build[by][bx] is not None:
+    if kind in ("wall", "door", "floor", "fireplace", "bed"):  # surface build orders
+        if (z != 0 or world.tiles[by][bx] == 2
+                or world.build[by][bx] is not None or world.order_at(bx, by)):
             return
-        for v in villagers:                            # don't wall a villager into a tile
-            if int(v.x) // S.TILE == bx and int(v.y) // S.TILE == by:
-                return
-        if all(world.stock[k] >= v for k, v in cost.items()):
-            for k, v in cost.items():
-                world.stock[k] -= v
-            world.build[by][bx] = {"kind": kind, "mat": mat}
-            world.recompute_rooms()
-            for v in villagers:
-                v.path = []
+        if not world.afford(cost):
+            world.set_notice("Need " + ", ".join(f"{v} {k}" for k, v in cost.items()))
+            return
+        world.reserve(cost)                            # materials committed to the order
+        world.orders.append({"job": "build", "x": bx, "y": by, "kind": kind, "mat": mat,
+                             "cost": cost, "taken": False,
+                             "center": (bx * S.TILE + S.TILE / 2, by * S.TILE + S.TILE / 2)})
     elif kind == "dig":
         if z < 0:
             world.dig(z, bx, by)
@@ -53,12 +51,19 @@ def place_build(world, villagers, bx, by, z, sel):
 def remove_build(world, villagers, bx, by, z):
     if not (0 <= bx < S.GRID_W and 0 <= by < S.GRID_H):
         return
-    if z == 0 and world.build[by][bx]:
-        world.build[by][bx] = None
-        world.recompute_rooms()
-        for v in villagers:
-            v.path = []
-    elif world.zstruct.get(z) and world.zstruct[z][by][bx]:
+    if z == 0:
+        o = world.order_at(bx, by)                     # cancel a pending order (refund)
+        if o:
+            world.refund(o["cost"])
+            world.orders.remove(o)
+            return
+        if world.build[by][bx]:
+            world.build[by][bx] = None
+            world.recompute_rooms()
+            for v in villagers:
+                v.path = []
+            return
+    if world.zstruct.get(z) and world.zstruct[z][by][bx]:
         world.zstruct[z][by][bx] = None
 
 
@@ -101,6 +106,13 @@ def request_target(world, villagers, selected, wx, wy):
         if work:
             return None, {"type": work, "target": best.center, "obj": best,
                           "t": 0.0, "work": 0.0}
+    # a built bed -> rest there
+    btx, bty = int(lx // S.TILE), int(ly // S.TILE)
+    if (0 <= btx < S.GRID_W and 0 <= bty < S.GRID_H and world.build[bty][btx]
+            and world.build[bty][btx]["kind"] == "bed"):
+        return "energy", {"type": "sleep", "need": "energy",
+                          "target": (btx * S.TILE + S.TILE / 2, bty * S.TILE + S.TILE / 2),
+                          "t": 0.0}
     # no object nearby — a mineable (stone/ore) or diggable (dirt) tile?
     tx, ty = int(lx // S.TILE), int(ly // S.TILE)
     if 0 <= tx < S.GRID_W and 0 <= ty < S.GRID_H:
@@ -145,7 +157,7 @@ def run(selftest=False):
     while running:
         dt = clock.tick(S.FPS) / 1000.0
         speed = S.SPEEDS[speed_idx]
-        gdt = 0.0 if paused else dt * speed
+        gdt = 0.0 if (paused or build_mode) else dt * speed   # build mode pauses the sim
 
         # --- events ---
         for e in pygame.event.get():
@@ -174,7 +186,11 @@ def run(selftest=False):
                 view_z = max(S.ZMIN, min(S.ZLEVELS - 1, view_z + e.y))
             elif e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 mx, my = e.pos
-                if mx < S.PLAY_W:
+                if build_mode and mx >= S.PLAY_W:          # choose a piece from the palette
+                    idx = (my - (S.TOPBAR + 60)) // 22
+                    if 0 <= idx < len(S.BUILDABLES):
+                        build_sel = idx
+                elif mx < S.PLAY_W:
                     wx, wy = mx + int(cam_x), (my - S.TOPBAR) + int(cam_y)
                     if build_mode and view_z <= 0:
                         place_build(world, villagers, wx // S.TILE, wy // S.TILE, view_z, build_sel)
@@ -192,13 +208,32 @@ def run(selftest=False):
                     wx, wy = mx + int(cam_x), (my - S.TOPBAR) + int(cam_y)
                     if build_mode and view_z <= 0:
                         remove_build(world, villagers, wx // S.TILE, wy // S.TILE, view_z)
-                    elif not build_mode and view_z == 0 and selected is not None:
-                        req = request_target(world, villagers, selected, wx, wy)
-                        if req:
-                            if selected.controlled:
-                                selected.action = req[1]   # you obey your own commands
+                    elif not build_mode and view_z == 0:
+                        obj = world.object_at(wx, wy)
+                        if obj and obj.kind == "bench":          # queue a craft order
+                            name, ins, _o = S.RECIPES[world.sel_recipe]
+                            if world.afford(ins):
+                                world.orders.append({"job": "craft", "station": "bench",
+                                                     "recipe": world.sel_recipe,
+                                                     "center": obj.center, "taken": False})
+                                world.set_notice("Order: craft " + name)
                             else:
-                                selected.consider_request(*req)
+                                world.set_notice("Need " + ", ".join(f"{v} {k}" for k, v in ins.items()))
+                        elif obj and obj.kind == "smelter":      # queue a smelt order
+                            if world.stock["ore"] >= 1 and world.stock["wood"] >= 1:
+                                world.orders.append({"job": "craft", "station": "smelter",
+                                                     "recipe": None, "center": obj.center,
+                                                     "taken": False})
+                                world.set_notice("Order: smelt")
+                            else:
+                                world.set_notice("Need ore + wood")
+                        elif selected is not None:
+                            req = request_target(world, villagers, selected, wx, wy)
+                            if req:
+                                if selected.controlled:
+                                    selected.action = req[1]   # you obey your own commands
+                                else:
+                                    selected.consider_request(*req)
                     elif not build_mode and view_z < 0 and selected is not None:
                         bx, by = wx // S.TILE, wy // S.TILE
                         if (0 <= bx < S.GRID_W and 0 <= by < S.GRID_H
@@ -229,6 +264,12 @@ def run(selftest=False):
         world.update(gdt)
         for v in villagers:
             v.update(gdt, world, villagers)
+        if world.paths_dirty:                     # a built wall may block routes
+            for v in villagers:
+                v.path = []
+            world.paths_dirty = False
+        if world.notice_t > 0:
+            world.notice_t -= dt                  # fade even while build-paused
 
         # --- draw ---
         if view_z < 0:
@@ -242,6 +283,7 @@ def run(selftest=False):
             screen.fill(S.C_GRASS)
             world.draw(screen, cam)
             world.draw_build(screen, cam)
+            world.draw_orders(screen, cam)            # pending build blueprints
             world.draw_struct(screen, cam, 0)         # surface stairwells
             if view_z == 0:
                 for v in villagers:
@@ -269,17 +311,22 @@ def run(selftest=False):
                 ghost.fill((250, 240, 150, 90))
                 screen.blit(ghost, (bx * S.TILE - int(cam_x),
                                     by * S.TILE + S.TOPBAR - int(cam_y)))
-            name, kind, mat, cost = S.BUILDABLES[build_sel]
-            costs = ", ".join(f"{v} {k}" for k, v in cost.items())
+            name = S.BUILDABLES[build_sel][0]
             pygame.draw.rect(screen, S.C_TOPBAR, (0, S.HEIGHT - 24, S.PLAY_W, 24))
             banner = font.render(
-                f"BUILD: {name} ({costs})   ·   TAB cycle · L-click place · R-click remove · B exit",
+                f"BUILD (paused): {name}  ·  L-click = order  ·  R-click = cancel  ·  B = exit",
                 True, S.C_GOLD)
             screen.blit(banner, (10, S.HEIGHT - 22))
 
-        from ui import draw_topbar, draw_panel
-        draw_topbar(screen, font, cal, speed, view_z, paused)
-        draw_panel(screen, font, big, selected, villagers, world)
+        from ui import draw_topbar, draw_panel, draw_build_panel
+        draw_topbar(screen, font, cal, speed, view_z, paused or build_mode)
+        if build_mode:
+            draw_build_panel(screen, font, big, build_sel, world)
+        else:
+            draw_panel(screen, font, big, selected, villagers, world)
+        if world.notice_t > 0:                        # transient message, top-centre
+            n = font.render(world.notice, True, S.C_SELECT)
+            screen.blit(n, ((S.PLAY_W - n.get_width()) // 2, S.TOPBAR + 8))
         pygame.display.flip()
 
         if selftest:

@@ -132,6 +132,7 @@ BUILDABLES = [
     ("Door",        "door",  "wood",  {"wood": 1}),
     ("Wood Floor",  "floor", "wood",  {"wood": 1}),
     ("Fireplace",   "fireplace", "stone", {"stone": 3}),
+    ("Bed",         "bed",   "wood",  {"wood": 4}),
     ("Dig",          "dig",           None, {}),
     ("Stairs Down",  "stairs_down",   None, {}),
     ("Stairs Up",    "stairs_up",     None, {}),
@@ -147,7 +148,7 @@ TOOL_USES = {"wood": 15, "stone": 35, "metal": 80}   # uses before it breaks
 ACTION_TOOL = {"minetile": "pickaxe", "dig": "shovel"}  # gated actions -> tool
 
 # --- Skills (v0.9c-ii) — improve with use, speeding up work -----------
-SKILLS = ["woodcutting", "mining", "farming", "crafting", "smithing"]
+SKILLS = ["woodcutting", "mining", "farming", "crafting", "smithing", "building"]
 ACTION_SKILL = {"chop": "woodcutting", "mine": "mining", "minetile": "mining",
                 "minework": "mining", "farm": "farming", "craft": "crafting",
                 "smelt": "smithing"}

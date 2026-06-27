@@ -46,6 +46,10 @@ class World:
         self.season = "Spring"   # set each frame by the main loop
         self.daylight = 1.0
         self._fire_fuel = S.FIRE_BURN
+        self.orders = []         # pending build/craft jobs villagers fulfill
+        self.notice = ""         # transient on-screen message
+        self.notice_t = 0.0
+        self.paths_dirty = False # a wall changed; villagers should re-path
         # underground: solid material ("earth"/"stone") until carved to None (open)
         self.under = {z: [["earth" if z >= -2 else "stone" for _ in range(S.GRID_W)]
                           for _ in range(S.GRID_H)]
@@ -292,7 +296,7 @@ class World:
         from the edge are marked indoors. Call whenever walls change."""
         def is_wall(x, y):
             b = self.build[y][x]
-            return bool(b) and b["kind"] == "wall"
+            return bool(b) and b["kind"] in ("wall", "door")   # a door seals a room
         seen = [[False] * S.GRID_W for _ in range(S.GRID_H)]
         q = deque()
         for x in range(S.GRID_W):
@@ -358,6 +362,84 @@ class World:
             if d < bd:
                 bd, best = d, (cx, cy)
         return best
+
+    # -- orders & labor (build/craft) ----------------------------------
+    def afford(self, cost):
+        return all(self.stock.get(k, 0) >= v for k, v in cost.items())
+
+    def reserve(self, cost):
+        for k, v in cost.items():
+            self.stock[k] -= v
+
+    def refund(self, cost):
+        for k, v in cost.items():
+            self.stock[k] += v
+
+    def set_notice(self, text):
+        self.notice, self.notice_t = text, 3.0
+
+    def object_at(self, wx, wy, maxd=30):
+        best, bd = None, maxd * maxd
+        for o in self.objects:
+            d = (o.center[0] - wx) ** 2 + (o.center[1] - wy) ** 2
+            if d < bd:
+                bd, best = d, o
+        return best
+
+    def nearest_bed(self, pos):
+        best, bd = None, 1e18
+        for y in range(S.GRID_H):
+            for x in range(S.GRID_W):
+                b = self.build[y][x]
+                if b and b["kind"] == "bed":
+                    cx, cy = x * S.TILE + S.TILE / 2, y * S.TILE + S.TILE / 2
+                    d = (cx - pos[0]) ** 2 + (cy - pos[1]) ** 2
+                    if d < bd:
+                        bd, best = d, (cx, cy)
+        return best
+
+    def order_at(self, x, y):
+        for o in self.orders:
+            if o["job"] == "build" and o["x"] == x and o["y"] == y:
+                return o
+        return None
+
+    def build_stand(self, x, y):
+        for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+            if self.walkable(nx, ny):
+                return (nx * S.TILE + S.TILE / 2, ny * S.TILE + S.TILE / 2)
+        if self.walkable(x, y):
+            return (x * S.TILE + S.TILE / 2, y * S.TILE + S.TILE / 2)
+        return None
+
+    def claim_order(self, pos):
+        best, bd = None, 1e18
+        for o in self.orders:
+            if o.get("taken"):
+                continue
+            c = o["center"]
+            d = (c[0] - pos[0]) ** 2 + (c[1] - pos[1]) ** 2
+            if d < bd:
+                bd, best = d, o
+        if best:
+            best["taken"] = True
+        return best
+
+    def complete_build(self, o):
+        if o not in self.orders:
+            return
+        self.build[o["y"]][o["x"]] = {"kind": o["kind"], "mat": o["mat"]}
+        if o["kind"] in ("wall", "door"):
+            self.recompute_rooms()
+            self.paths_dirty = True
+        self.orders.remove(o)
+
+    def do_craft(self, recipe_idx):
+        saved = self.sel_recipe
+        self.sel_recipe = recipe_idx
+        result = self.craft()
+        self.sel_recipe = saved
+        return result
 
     # -- simulation ----------------------------------------------------
     def update(self, gdt):
@@ -632,6 +714,23 @@ class World:
                     flame = (240, 140, 40) if lit else (90, 60, 40)
                     pygame.draw.polygon(surf, flame, [(rx + S.TILE // 2, ry + 6),
                                         (rx + 8, ry + S.TILE - 4), (rx + S.TILE - 8, ry + S.TILE - 4)])
+                elif b["kind"] == "bed":
+                    pygame.draw.rect(surf, (150, 120, 170), (rx + 3, ry + 5, S.TILE - 6, S.TILE - 10))
+                    pygame.draw.rect(surf, (224, 224, 232), (rx + 3, ry + 5, S.TILE - 6, 6))
+
+    def draw_orders(self, surf, cam):
+        """Pending build orders as translucent blueprints."""
+        for o in self.orders:
+            if o["job"] != "build":
+                continue
+            rx = o["x"] * S.TILE - cam[0]
+            ry = o["y"] * S.TILE + S.TOPBAR - cam[1]
+            if not (-S.TILE < rx < S.PLAY_W and S.TOPBAR - S.TILE < ry < S.HEIGHT):
+                continue
+            g = pygame.Surface((S.TILE, S.TILE), pygame.SRCALPHA)
+            g.fill((120, 200, 255, 70))
+            surf.blit(g, (rx, ry))
+            pygame.draw.rect(surf, (120, 200, 255), (rx, ry, S.TILE, S.TILE), 1)
 
     def draw_underground(self, surf, cam, z):
         """Draw an excavated level: solid earth/stone vs carved-open floor."""
